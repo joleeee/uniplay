@@ -2,7 +2,7 @@ use mpvipc::*;
 use rand::Rng;
 use rumqttc::{Client, Connection, MqttOptions, QoS};
 use serde::{Deserialize, Serialize};
-use std::{io, sync::mpsc, thread, time::Duration};
+use std::{io, process::Command, sync::mpsc, thread, time::Duration};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Message {
@@ -14,6 +14,9 @@ pub enum Message {
 use clap::Parser;
 #[derive(Parser, Debug)]
 struct Args {
+    #[clap(long)]
+    autostart: bool,
+
     #[clap(short, long, default_value = "test.mosquitto.org")]
     server: String,
 
@@ -40,6 +43,19 @@ fn main() {
         r#"start mpv with "mpv --input-ipc-server={} --idle""#,
         args.ipc_path
     );
+
+    if args.autostart {
+        let ipc_arg = format!("{}={}", "--input-ipc-server", args.ipc_path);
+
+        Command::new("mpv")
+            .arg(ipc_arg)
+            .arg("--idle")
+            .spawn()
+            .unwrap();
+
+        // ew
+        thread::sleep(Duration::from_millis(500));
+    }
 
     let (tx, rx) = mpsc::channel::<Message>();
     let mpv_handle = thread::spawn(move || mpv(rx, &args.ipc_path));
@@ -93,7 +109,7 @@ fn mqtt_listen(mut connection: Connection, tx: mpsc::Sender<Message>) {
 }
 
 fn mpv(rx: mpsc::Receiver<Message>, ipc_path: &str) {
-    let mpv = Mpv::connect(ipc_path).unwrap();
+    let mpv = Mpv::connect(ipc_path).expect("error connecting, did you forget to start mpv?");
 
     for msg in rx.iter() {
         println!("got {:?}", msg);
