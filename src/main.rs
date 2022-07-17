@@ -1,4 +1,5 @@
 use mpvipc::*;
+use rand::Rng;
 use rumqttc::{Client, Connection, MqttOptions, QoS};
 use serde::{Deserialize, Serialize};
 use std::{io, sync::mpsc, thread, time::Duration};
@@ -10,26 +11,53 @@ pub enum Message {
     Media(String),
 }
 
+use clap::Parser;
+#[derive(Parser, Debug)]
+struct Args {
+    #[clap(short, long, default_value = "test.mosquitto.org")]
+    server: String,
+
+    #[clap(long, default_value = "1883")]
+    port: u16,
+
+    #[clap(long, default_value = "default_room")]
+    room: String,
+
+    #[clap(long = "ipc", default_value = "/tmp/mpv.sock")]
+    ipc_path: String,
+}
+
 fn main() {
-    println!(r#"start mpv with "mpv --input-ipc-server=/tmp/mpv.sock --idle""#);
+    let args = Args::parse();
+    let topic = format!("{}/{}", "uniplay", args.room);
+    let user_id = {
+        let mut rng = rand::thread_rng();
+        let id: u32 = rng.gen();
+        format!("uniplayuser{}", id)
+    };
+
+    println!(
+        r#"start mpv with "mpv --input-ipc-server={} --idle""#,
+        args.ipc_path
+    );
 
     let (tx, rx) = mpsc::channel::<Message>();
-    let mpv_handle = thread::spawn(|| mpv(rx));
+    let mpv_handle = thread::spawn(move || mpv(rx, &args.ipc_path));
 
-    let mut mqttoptions = MqttOptions::new("uniplay", "test.mosquitto.org", 1883);
+    let mut mqttoptions = MqttOptions::new(user_id, args.server, args.port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     let (mut client, connection) = Client::new(mqttoptions, 10);
-    client.subscribe("uniplay/thing", QoS::ExactlyOnce).unwrap();
+    client.subscribe(&topic, QoS::ExactlyOnce).unwrap();
 
     thread::spawn(|| {
         mqtt_listen(connection, tx);
     });
 
-    thread::spawn(|| {
+    thread::spawn(move || {
         if true {
-            repl(client);
+            repl(client, &topic);
         } else {
-            mqtt_spoof(client);
+            mqtt_spoof(client, &topic);
         }
     });
 
@@ -64,8 +92,8 @@ fn mqtt_listen(mut connection: Connection, tx: mpsc::Sender<Message>) {
     }
 }
 
-fn mpv(rx: mpsc::Receiver<Message>) {
-    let mpv = Mpv::connect("/tmp/mpv.sock").unwrap();
+fn mpv(rx: mpsc::Receiver<Message>, ipc_path: &str) {
+    let mpv = Mpv::connect(ipc_path).unwrap();
 
     for msg in rx.iter() {
         println!("got {:?}", msg);
@@ -104,7 +132,7 @@ fn mpv(rx: mpsc::Receiver<Message>) {
     }
 }
 
-fn repl(mut client: Client) {
+fn repl(mut client: Client, topic: &String) {
     println!("commands: [set <link>, play <seconds>, pause]");
 
     let stdin = io::stdin();
@@ -127,16 +155,14 @@ fn repl(mut client: Client) {
 
         if let Some(msg) = msg {
             let msg = serde_json::to_string(&msg).unwrap();
-            client
-                .publish("uniplay/thing", QoS::ExactlyOnce, false, msg)
-                .unwrap();
+            client.publish(topic, QoS::ExactlyOnce, false, msg).unwrap();
         }
 
         input = String::new();
     }
 }
 
-fn mqtt_spoof(mut client: Client) {
+fn mqtt_spoof(mut client: Client, topic: &String) {
     let messages = vec![
         Message::Media("https://youtu.be/jNQXAC9IVRw".to_string()),
         Message::Play(2.0),
@@ -148,9 +174,7 @@ fn mqtt_spoof(mut client: Client) {
     for msg in messages {
         let msg = serde_json::to_string(&msg).unwrap();
 
-        client
-            .publish("uniplay/thing", QoS::ExactlyOnce, false, msg)
-            .unwrap();
+        client.publish(topic, QoS::ExactlyOnce, false, msg).unwrap();
 
         thread::sleep(Duration::from_millis(10_000));
     }
