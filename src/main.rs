@@ -71,8 +71,10 @@ fn mpv(rx: mpsc::Receiver<Message>) {
         println!("got {:?}", msg);
         match msg {
             Message::Play(pos) => {
-                mpv.seek(pos, SeekOptions::Absolute).expect("play: failed to seek");
-                mpv.set_property("pause", false).expect("play: failed to unpause");
+                mpv.seek(pos, SeekOptions::Absolute)
+                    .expect("play: failed to seek");
+                mpv.set_property("pause", false)
+                    .expect("play: failed to unpause");
             }
             Message::Pause => mpv.pause().expect("pause: failed to pause"),
             Message::Media(link) => {
@@ -109,8 +111,8 @@ fn repl(mut client: Client) {
     let mut input = String::new();
     while stdin.read_line(&mut input).is_ok() {
         let (keyword, arg) = {
-            let vec: Vec<_> = input.trim().split(' ').collect();
-            (*vec.get(0).expect("no keyword"), *vec.get(1).unwrap_or(&""))
+            let mut words = input.trim().split(' ');
+            (words.next().unwrap(), words.next().unwrap_or(""))
         };
 
         let msg = match keyword {
