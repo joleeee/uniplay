@@ -28,6 +28,9 @@ struct Args {
 
     #[clap(long = "ipc", default_value = "/tmp/mpv.sock")]
     ipc_path: String,
+
+    #[clap(long)]
+    spoof: bool,
 }
 
 fn main() {
@@ -70,10 +73,10 @@ fn main() {
     });
 
     thread::spawn(move || {
-        if true {
-            repl(client, &topic);
-        } else {
+        if args.spoof {
             mqtt_spoof(client, &topic);
+        } else {
+            repl(client, &topic);
         }
     });
 
