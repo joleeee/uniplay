@@ -17,7 +17,7 @@ struct Args {
     #[clap(long)]
     autostart: bool,
 
-    #[clap(short, long, default_value = "test.mosquitto.org")]
+    #[clap(long, default_value = "test.mosquitto.org")]
     server: String,
 
     #[clap(long, default_value = "1883")]
@@ -99,10 +99,7 @@ fn mqtt_listen(mut connection: Connection, tx: mpsc::Sender<Message>) {
                 None
             }
         })
-        .map(|publish| {
-            let msg: Message = serde_json::from_slice(&publish.payload).unwrap();
-            msg
-        })
+        .map(|publish| serde_json::from_slice(&publish.payload).unwrap())
     {
         tx.send(msg).unwrap();
     }
@@ -128,16 +125,13 @@ fn mpv(rx: mpsc::Receiver<Message>, ipc_path: &str) {
                     PlaylistAddOptions::Append,
                 )
                 .unwrap();
-                let playlist = mpv.get_playlist().unwrap();
 
+                let playlist = mpv.get_playlist().unwrap();
                 let entry = playlist
                     .0
                     .iter()
-                    .find(|entry| {
-                        let a = entry.filename.as_str();
-                        let b = link.as_str();
-                        a == b
-                    })
+                    .rev()
+                    .find(|entry| entry.filename == link)
                     .unwrap();
 
                 mpv.playlist_play_id(entry.id).unwrap();
