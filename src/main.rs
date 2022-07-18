@@ -16,6 +16,7 @@ use std::{
 pub enum ProtoMessage {
     /// Sent when joining a room
     Join(String),
+    Chat(String, String),
     PlayFrom(f64),
     Stop,
     Media(String),
@@ -164,7 +165,7 @@ fn main() {
     });
 
     thread::spawn(move || {
-        let msg = serde_json::to_string(&ProtoMessage::Join(user_id)).unwrap();
+        let msg = serde_json::to_string(&ProtoMessage::Join(user_id.clone())).unwrap();
         client
             .publish(&topic, QoS::ExactlyOnce, false, msg)
             .unwrap();
@@ -172,7 +173,7 @@ fn main() {
         if args.spoof {
             mqtt_spoof(client, &topic);
         } else {
-            repl(client, &topic);
+            repl(client, user_id, &topic);
         }
     });
 
@@ -212,6 +213,9 @@ fn relay(rx: mpsc::Receiver<ProtoMessage>, tx: mpsc::Sender<VideoMessage>) {
             ProtoMessage::Join(name) => {
                 println!("{} joined the room.", name);
             }
+            ProtoMessage::Chat(from, msg) => {
+                println!("<{}> {}", from, msg);
+            }
             ProtoMessage::PlayFrom(pos) => {
                 tx.send(VideoMessage::Seek(pos)).unwrap();
                 tx.send(VideoMessage::Unpause).unwrap();
@@ -226,21 +230,23 @@ fn relay(rx: mpsc::Receiver<ProtoMessage>, tx: mpsc::Sender<VideoMessage>) {
     }
 }
 
-fn repl(mut client: Client, topic: &String) {
+fn repl(mut client: Client, user: String, topic: &String) {
     println!("commands: [set <link>, play <seconds>, pause]");
 
     let stdin = io::stdin();
     let mut input = String::new();
     while stdin.read_line(&mut input).is_ok() {
         let (keyword, arg) = {
-            let mut words = input.trim().split(' ');
-            (words.next().unwrap(), words.next().unwrap_or(""))
+            let raw = input.trim();
+
+            raw.split_once(' ').unwrap_or((raw, ""))
         };
 
         let msg = match keyword {
             "set" => Some(ProtoMessage::Media(arg.to_string())),
             "pause" => Some(ProtoMessage::Stop),
             "play" => Some(ProtoMessage::PlayFrom(arg.parse().unwrap())),
+            "chat" => Some(ProtoMessage::Chat(user.clone(), arg.to_string())),
             _ => {
                 println!("unknown command");
                 None
