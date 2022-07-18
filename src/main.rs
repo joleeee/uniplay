@@ -12,12 +12,95 @@ use std::{
 };
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum Message {
+/// Network messages
+pub enum ProtoMessage {
     /// Sent when joining a room
     Join(String),
     Play(f64),
     Pause,
     Media(String),
+}
+
+/// Player messages
+#[derive(Debug)]
+pub enum VideoMessage {
+    Seek(f64),
+    Unpause,
+    Pause,
+    Media(String),
+}
+
+trait VideoPlayer {
+    fn run(&self, autostart: bool, rx: mpsc::Receiver<VideoMessage>);
+}
+
+struct MpvPlayer {
+    ipc_path: String,
+}
+
+impl VideoPlayer for MpvPlayer {
+    fn run(&self, autostart: bool, rx: mpsc::Receiver<VideoMessage>) {
+        if autostart {
+            let ipc_arg = format!("{}={}", "--input-ipc-server", self.ipc_path);
+
+            Command::new("mpv")
+                .arg(ipc_arg)
+                .arg("--idle")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                // keep stderr
+                .spawn()
+                .unwrap();
+
+            // ew
+            thread::sleep(Duration::from_millis(500));
+        }
+
+        let mpv = Mpv::connect(&self.ipc_path).unwrap_or_else(|e| {
+            println!("error connecting to mpv, is mpv running?");
+            println!(
+                r#"start with "mpv --input-ipc-server={} --idle""#,
+                self.ipc_path
+            );
+            panic!("{}", e);
+        });
+
+        for msg in rx.iter() {
+            println!("mpv: {:?}", &msg);
+            match msg {
+                VideoMessage::Pause => {
+                    mpv.pause().expect("failed to pause");
+                }
+                VideoMessage::Unpause => {
+                    mpv.set_property("pause", false).expect("failed to unpause");
+                }
+                VideoMessage::Seek(pos) => {
+                    mpv.seek(pos, SeekOptions::Absolute)
+                        .expect("failed to seek");
+                }
+                VideoMessage::Media(path) => {
+                    mpv.playlist_add(
+                        &path,
+                        PlaylistAddTypeOptions::File,
+                        PlaylistAddOptions::Append,
+                    )
+                    .unwrap();
+
+                    let playlist = mpv.get_playlist().unwrap();
+                    let entry = playlist
+                        .0
+                        .iter()
+                        .rev()
+                        .find(|entry| entry.filename == path)
+                        .unwrap();
+
+                    mpv.playlist_play_id(entry.id).unwrap();
+                    // but start off paused
+                    mpv.pause().unwrap();
+                }
+            }
+        }
+    }
 }
 
 #[derive(FromArgs, Debug)]
@@ -61,36 +144,27 @@ fn main() {
         format!("uniplayuser{}", id)
     };
 
-    if args.autostart {
-        let ipc_arg = format!("{}={}", "--input-ipc-server", args.ipc_path);
+    let (pt_tx, pt_rx) = mpsc::channel::<ProtoMessage>();
+    let (vd_tx, vd_rx) = mpsc::channel::<VideoMessage>();
 
-        Command::new("mpv")
-            .arg(ipc_arg)
-            .arg("--idle")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            // keep stderr
-            .spawn()
-            .unwrap();
-
-        // ew
-        thread::sleep(Duration::from_millis(500));
-    }
-
-    let (tx, rx) = mpsc::channel::<Message>();
-    let mpv_handle = thread::spawn(move || mpv(rx, &args.ipc_path));
+    let relay_handle = thread::spawn(move || relay(pt_rx, vd_tx));
 
     let mut mqttoptions = MqttOptions::new(&user_id, args.server, args.port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     let (mut client, connection) = Client::new(mqttoptions, 10);
     client.subscribe(&topic, QoS::ExactlyOnce).unwrap();
 
+    let mpv = MpvPlayer {
+        ipc_path: args.ipc_path,
+    };
+    let mpv_handle = thread::spawn(move || mpv.run(args.autostart, vd_rx));
+
     thread::spawn(|| {
-        mqtt_listen(connection, tx);
+        mqtt_listen(connection, pt_tx);
     });
 
     thread::spawn(move || {
-        let msg = serde_json::to_string(&Message::Join(user_id)).unwrap();
+        let msg = serde_json::to_string(&ProtoMessage::Join(user_id)).unwrap();
         client
             .publish(&topic, QoS::ExactlyOnce, false, msg)
             .unwrap();
@@ -103,9 +177,10 @@ fn main() {
     });
 
     mpv_handle.join().unwrap();
+    relay_handle.join().unwrap();
 }
 
-fn mqtt_listen(mut connection: Connection, tx: mpsc::Sender<Message>) {
+fn mqtt_listen(mut connection: Connection, tx: mpsc::Sender<ProtoMessage>) {
     use rumqttc::{Event, Packet};
     for msg in connection
         .iter()
@@ -130,45 +205,22 @@ fn mqtt_listen(mut connection: Connection, tx: mpsc::Sender<Message>) {
     }
 }
 
-fn mpv(rx: mpsc::Receiver<Message>, ipc_path: &str) {
-    let mpv = Mpv::connect(ipc_path).unwrap_or_else(|e| {
-        println!("error connecting to mpv, is mpv running?");
-        println!(r#"start with "mpv --input-ipc-server={} --idle""#, ipc_path,);
-        panic!("{}", e);
-    });
-
+fn relay(rx: mpsc::Receiver<ProtoMessage>, tx: mpsc::Sender<VideoMessage>) {
     for msg in rx.iter() {
-        println!("got {:?}", msg);
+        println!("relay: {:?}", msg);
         match msg {
-            Message::Join(name) => {
+            ProtoMessage::Join(name) => {
                 println!("{} joined the room.", name);
             }
-            Message::Play(pos) => {
-                mpv.seek(pos, SeekOptions::Absolute)
-                    .expect("play: failed to seek");
-                mpv.set_property("pause", false)
-                    .expect("play: failed to unpause");
+            ProtoMessage::Play(pos) => {
+                tx.send(VideoMessage::Seek(pos)).unwrap();
+                tx.send(VideoMessage::Unpause).unwrap();
             }
-            Message::Pause => mpv.pause().expect("pause: failed to pause"),
-            Message::Media(link) => {
-                mpv.playlist_add(
-                    &link,
-                    PlaylistAddTypeOptions::File,
-                    PlaylistAddOptions::Append,
-                )
-                .unwrap();
-
-                let playlist = mpv.get_playlist().unwrap();
-                let entry = playlist
-                    .0
-                    .iter()
-                    .rev()
-                    .find(|entry| entry.filename == link)
-                    .unwrap();
-
-                mpv.playlist_play_id(entry.id).unwrap();
-                // but start off paused
-                mpv.pause().unwrap();
+            ProtoMessage::Pause => {
+                tx.send(VideoMessage::Pause).unwrap();
+            }
+            ProtoMessage::Media(link) => {
+                tx.send(VideoMessage::Media(link)).unwrap();
             }
         }
     }
@@ -186,9 +238,9 @@ fn repl(mut client: Client, topic: &String) {
         };
 
         let msg = match keyword {
-            "set" => Some(Message::Media(arg.to_string())),
-            "pause" => Some(Message::Pause),
-            "play" => Some(Message::Play(arg.parse().unwrap())),
+            "set" => Some(ProtoMessage::Media(arg.to_string())),
+            "pause" => Some(ProtoMessage::Pause),
+            "play" => Some(ProtoMessage::Play(arg.parse().unwrap())),
             _ => {
                 println!("unknown command");
                 None
@@ -206,10 +258,10 @@ fn repl(mut client: Client, topic: &String) {
 
 fn mqtt_spoof(mut client: Client, topic: &String) {
     let messages = vec![
-        Message::Media("https://youtu.be/jNQXAC9IVRw".to_string()),
-        Message::Play(2.0),
-        Message::Pause,
-        Message::Play(4.0),
+        ProtoMessage::Media("https://youtu.be/jNQXAC9IVRw".to_string()),
+        ProtoMessage::Play(2.0),
+        ProtoMessage::Pause,
+        ProtoMessage::Play(4.0),
     ];
 
     thread::sleep(Duration::from_millis(500));
