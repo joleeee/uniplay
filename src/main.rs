@@ -1,3 +1,4 @@
+use argh::FromArgs;
 use mpvipc::*;
 use rand::Rng;
 use rumqttc::{Client, Connection, MqttOptions, QoS};
@@ -11,30 +12,40 @@ pub enum Message {
     Media(String),
 }
 
-use clap::Parser;
-#[derive(Parser, Debug)]
+#[derive(FromArgs, Debug)]
+/// Tool for syncing video playback
 struct Args {
-    #[clap(long)]
+    #[argh(switch)]
+    /// autostart mpv
     autostart: bool,
 
-    #[clap(long, default_value = "test.mosquitto.org")]
+    #[argh(
+        option,
+        long = "server",
+        default = r#"String::from("test.mosquitto.org")"#
+    )]
+    /// server ip/domain
     server: String,
 
-    #[clap(long, default_value = "1883")]
+    #[argh(option, long = "port", default = "1883")]
+    /// server port
     port: u16,
 
-    #[clap(long, default_value = "default_room")]
+    #[argh(option, long = "room", default = r#"String::from("default_room")"#)]
+    /// name of room
     room: String,
 
-    #[clap(long = "ipc", default_value = "/tmp/mpv.sock")]
+    #[argh(option, long = "ipc", default = r#"String::from("/tmp/mpv.sock")"#)]
+    /// path to mpv socket
     ipc_path: String,
 
-    #[clap(long)]
+    #[argh(switch)]
+    /// send fake requests for testing
     spoof: bool,
 }
 
 fn main() {
-    let args = Args::parse();
+    let args: Args = argh::from_env();
     let topic = format!("{}/{}", "uniplay", args.room);
     let user_id = {
         let mut rng = rand::thread_rng();
