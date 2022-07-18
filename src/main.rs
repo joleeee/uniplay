@@ -103,27 +103,6 @@ impl VideoPlayer for MpvPlayer {
     }
 }
 
-fn relay(rx: mpsc::Receiver<ProtoMessage>, tx: mpsc::Sender<VideoMessage>) {
-    for msg in rx.iter() {
-        println!("relay: {:?}", msg);
-        match msg {
-            ProtoMessage::Join(name) => {
-                println!("{} joined the room.", name);
-            }
-            ProtoMessage::Play(pos) => {
-                tx.send(VideoMessage::Seek(pos)).unwrap();
-                tx.send(VideoMessage::Unpause).unwrap();
-            }
-            ProtoMessage::Pause => {
-                tx.send(VideoMessage::Pause).unwrap();
-            }
-            ProtoMessage::Media(link) => {
-                tx.send(VideoMessage::Media(link)).unwrap();
-            }
-        }
-    }
-}
-
 #[derive(FromArgs, Debug)]
 /// Tool for syncing video playback
 struct Args {
@@ -225,6 +204,27 @@ fn mqtt_listen(mut connection: Connection, tx: mpsc::Sender<ProtoMessage>) {
         .map(|publish| serde_json::from_slice(&publish.payload).unwrap())
     {
         tx.send(msg).unwrap();
+    }
+}
+
+fn relay(rx: mpsc::Receiver<ProtoMessage>, tx: mpsc::Sender<VideoMessage>) {
+    for msg in rx.iter() {
+        println!("relay: {:?}", msg);
+        match msg {
+            ProtoMessage::Join(name) => {
+                println!("{} joined the room.", name);
+            }
+            ProtoMessage::Play(pos) => {
+                tx.send(VideoMessage::Seek(pos)).unwrap();
+                tx.send(VideoMessage::Unpause).unwrap();
+            }
+            ProtoMessage::Pause => {
+                tx.send(VideoMessage::Pause).unwrap();
+            }
+            ProtoMessage::Media(link) => {
+                tx.send(VideoMessage::Media(link)).unwrap();
+            }
+        }
     }
 }
 
