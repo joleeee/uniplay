@@ -13,6 +13,8 @@ use std::{
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Message {
+    /// Sent when joining a room
+    Join(String),
     Play(f64),
     Pause,
     Media(String),
@@ -78,7 +80,7 @@ fn main() {
     let (tx, rx) = mpsc::channel::<Message>();
     let mpv_handle = thread::spawn(move || mpv(rx, &args.ipc_path));
 
-    let mut mqttoptions = MqttOptions::new(user_id, args.server, args.port);
+    let mut mqttoptions = MqttOptions::new(&user_id, args.server, args.port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     let (mut client, connection) = Client::new(mqttoptions, 10);
     client.subscribe(&topic, QoS::ExactlyOnce).unwrap();
@@ -88,6 +90,11 @@ fn main() {
     });
 
     thread::spawn(move || {
+        let msg = serde_json::to_string(&Message::Join(user_id)).unwrap();
+        client
+            .publish(&topic, QoS::ExactlyOnce, false, msg)
+            .unwrap();
+
         if args.spoof {
             mqtt_spoof(client, &topic);
         } else {
@@ -133,6 +140,9 @@ fn mpv(rx: mpsc::Receiver<Message>, ipc_path: &str) {
     for msg in rx.iter() {
         println!("got {:?}", msg);
         match msg {
+            Message::Join(name) => {
+                println!("{} joined the room.", name);
+            }
             Message::Play(pos) => {
                 mpv.seek(pos, SeekOptions::Absolute)
                     .expect("play: failed to seek");
