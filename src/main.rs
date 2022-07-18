@@ -16,8 +16,8 @@ use std::{
 pub enum ProtoMessage {
     /// Sent when joining a room
     Join(String),
-    Play(f64),
-    Pause,
+    PlayFrom(f64),
+    Stop,
     Media(String),
 }
 
@@ -212,11 +212,11 @@ fn relay(rx: mpsc::Receiver<ProtoMessage>, tx: mpsc::Sender<VideoMessage>) {
             ProtoMessage::Join(name) => {
                 println!("{} joined the room.", name);
             }
-            ProtoMessage::Play(pos) => {
+            ProtoMessage::PlayFrom(pos) => {
                 tx.send(VideoMessage::Seek(pos)).unwrap();
                 tx.send(VideoMessage::Unpause).unwrap();
             }
-            ProtoMessage::Pause => {
+            ProtoMessage::Stop => {
                 tx.send(VideoMessage::Pause).unwrap();
             }
             ProtoMessage::Media(link) => {
@@ -239,8 +239,8 @@ fn repl(mut client: Client, topic: &String) {
 
         let msg = match keyword {
             "set" => Some(ProtoMessage::Media(arg.to_string())),
-            "pause" => Some(ProtoMessage::Pause),
-            "play" => Some(ProtoMessage::Play(arg.parse().unwrap())),
+            "pause" => Some(ProtoMessage::Stop),
+            "play" => Some(ProtoMessage::PlayFrom(arg.parse().unwrap())),
             _ => {
                 println!("unknown command");
                 None
@@ -259,9 +259,9 @@ fn repl(mut client: Client, topic: &String) {
 fn mqtt_spoof(mut client: Client, topic: &String) {
     let messages = vec![
         ProtoMessage::Media("https://youtu.be/jNQXAC9IVRw".to_string()),
-        ProtoMessage::Play(2.0),
-        ProtoMessage::Pause,
-        ProtoMessage::Play(4.0),
+        ProtoMessage::PlayFrom(2.0),
+        ProtoMessage::Stop,
+        ProtoMessage::PlayFrom(4.0),
     ];
 
     thread::sleep(Duration::from_millis(500));
