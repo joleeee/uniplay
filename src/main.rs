@@ -3,7 +3,13 @@ use mpvipc::*;
 use rand::Rng;
 use rumqttc::{Client, Connection, MqttOptions, QoS};
 use serde::{Deserialize, Serialize};
-use std::{io, process::Command, sync::mpsc, thread, time::Duration};
+use std::{
+    io,
+    process::{Command, Stdio},
+    sync::mpsc,
+    thread,
+    time::Duration,
+};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Message {
@@ -59,6 +65,9 @@ fn main() {
         Command::new("mpv")
             .arg(ipc_arg)
             .arg("--idle")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            // keep stderr
             .spawn()
             .unwrap();
 
