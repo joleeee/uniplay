@@ -144,8 +144,6 @@ fn main() {
         format!("uniplayuser{}", id)
     };
 
-    if args.autostart {}
-
     let (pt_tx, pt_rx) = mpsc::channel::<ProtoMessage>();
     let (vd_tx, vd_rx) = mpsc::channel::<VideoMessage>();
 
