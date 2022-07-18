@@ -53,11 +53,6 @@ fn main() {
         format!("uniplayuser{}", id)
     };
 
-    println!(
-        r#"start mpv with "mpv --input-ipc-server={} --idle""#,
-        args.ipc_path
-    );
-
     if args.autostart {
         let ipc_arg = format!("{}={}", "--input-ipc-server", args.ipc_path);
 
@@ -120,7 +115,11 @@ fn mqtt_listen(mut connection: Connection, tx: mpsc::Sender<Message>) {
 }
 
 fn mpv(rx: mpsc::Receiver<Message>, ipc_path: &str) {
-    let mpv = Mpv::connect(ipc_path).expect("error connecting, did you forget to start mpv?");
+    let mpv = Mpv::connect(ipc_path).unwrap_or_else(|e| {
+        println!("error connecting to mpv, is mpv running?");
+        println!(r#"start with "mpv --input-ipc-server={} --idle""#, ipc_path,);
+        panic!("{}", e);
+    });
 
     for msg in rx.iter() {
         println!("got {:?}", msg);
