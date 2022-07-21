@@ -141,7 +141,9 @@ fn main() {
     let (pt_tx, pt_rx) = mpsc::channel::<ProtoMessage>(64);
     let (vd_tx, vd_rx) = mpsc::channel::<VideoMessage>(64);
 
-    let relay_handle = thread::spawn(move || relay(pt_rx, vd_tx));
+    let rt = tokio::runtime::Runtime::new().unwrap();
+
+    let relay_handle = rt.spawn(relay(pt_rx, vd_tx));
 
     let mut mqttoptions = MqttOptions::new(&user_id, args.server, args.port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
@@ -171,7 +173,7 @@ fn main() {
     });
 
     mpv_handle.join().unwrap();
-    relay_handle.join().unwrap();
+    rt.block_on(relay_handle).unwrap();
 }
 
 fn mqtt_listen(mut connection: Connection, tx: mpsc::Sender<ProtoMessage>) {
@@ -201,9 +203,9 @@ fn mqtt_listen(mut connection: Connection, tx: mpsc::Sender<ProtoMessage>) {
     }
 }
 
-fn relay(mut rx: mpsc::Receiver<ProtoMessage>, tx: mpsc::Sender<VideoMessage>) {
+async fn relay(mut rx: mpsc::Receiver<ProtoMessage>, tx: mpsc::Sender<VideoMessage>) {
     loop {
-        let msg = rx.blocking_recv().expect("closed");
+        let msg = rx.recv().await.expect("closed");
         println!("relay: {:?}", msg);
         match msg {
             ProtoMessage::Join(name) => {
@@ -213,14 +215,14 @@ fn relay(mut rx: mpsc::Receiver<ProtoMessage>, tx: mpsc::Sender<VideoMessage>) {
                 println!("<{}> {}", from, msg);
             }
             ProtoMessage::PlayFrom(pos) => {
-                tx.blocking_send(VideoMessage::Seek(pos)).unwrap();
-                tx.blocking_send(VideoMessage::Unpause).unwrap();
+                tx.send(VideoMessage::Seek(pos)).await.unwrap();
+                tx.send(VideoMessage::Unpause).await.unwrap();
             }
             ProtoMessage::Stop => {
-                tx.blocking_send(VideoMessage::Pause).unwrap();
+                tx.send(VideoMessage::Pause).await.unwrap();
             }
             ProtoMessage::Media(link) => {
-                tx.blocking_send(VideoMessage::Media(link)).unwrap();
+                tx.send(VideoMessage::Media(link)).await.unwrap();
             }
         }
     }
