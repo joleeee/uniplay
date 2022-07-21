@@ -1,4 +1,5 @@
 use argh::FromArgs;
+use async_trait::async_trait;
 use mpvi::{option, Mpv};
 use rand::Rng;
 use rumqttc::{Client, Connection, MqttOptions, QoS};
@@ -31,16 +32,18 @@ pub enum VideoMessage {
     Media(String),
 }
 
+#[async_trait]
 trait VideoPlayer {
-    fn run(&self, autostart: bool, rx: mpsc::Receiver<VideoMessage>);
+    async fn run(self, autostart: bool, rx: mpsc::Receiver<VideoMessage>);
 }
 
 struct MpvPlayer {
     ipc_path: String,
 }
 
+#[async_trait]
 impl VideoPlayer for MpvPlayer {
-    fn run(&self, autostart: bool, mut rx: mpsc::Receiver<VideoMessage>) {
+    async fn run(self, autostart: bool, mut rx: mpsc::Receiver<VideoMessage>) {
         if autostart {
             let ipc_arg = format!("{}={}", "--input-ipc-server", self.ipc_path);
 
@@ -57,43 +60,40 @@ impl VideoPlayer for MpvPlayer {
             thread::sleep(Duration::from_millis(500));
         }
 
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
-            let mpv = Mpv::new(&self.ipc_path).await.unwrap_or_else(|e| {
-                println!("error connecting to mpv, is mpv running?");
-                println!(
-                    r#"start with "mpv --input-ipc-server={} --idle""#,
-                    self.ipc_path
-                );
-                panic!("{}", e);
-            });
+        let mpv = Mpv::new(&self.ipc_path).await.unwrap_or_else(|e| {
+            println!("error connecting to mpv, is mpv running?");
+            println!(
+                r#"start with "mpv --input-ipc-server={} --idle""#,
+                self.ipc_path
+            );
+            panic!("{}", e);
+        });
 
-            loop {
-                let msg = rx.recv().await.expect("closed");
-                println!("mpv: {:?}", &msg);
-                match msg {
-                    VideoMessage::Pause => {
-                        mpv.pause().await.expect("failed to pause");
-                    }
-                    VideoMessage::Unpause => {
-                        mpv.unpause().await.expect("failed to unpause");
-                    }
-                    VideoMessage::Seek(pos) => {
-                        mpv.seek(pos, option::Seek::Absolute)
-                            .await
-                            .expect("failed to seek");
-                    }
-                    VideoMessage::Media(path) => {
-                        mpv.load_file(&path, option::Insertion::Replace)
-                            .await
-                            .expect("failed to load file");
+        loop {
+            let msg = rx.recv().await.expect("closed");
+            println!("mpv: {:?}", &msg);
+            match msg {
+                VideoMessage::Pause => {
+                    mpv.pause().await.expect("failed to pause");
+                }
+                VideoMessage::Unpause => {
+                    mpv.unpause().await.expect("failed to unpause");
+                }
+                VideoMessage::Seek(pos) => {
+                    mpv.seek(pos, option::Seek::Absolute)
+                        .await
+                        .expect("failed to seek");
+                }
+                VideoMessage::Media(path) => {
+                    mpv.load_file(&path, option::Insertion::Replace)
+                        .await
+                        .expect("failed to load file");
 
-                        // start off paused
-                        mpv.pause().await.expect("failed to pause");
-                    }
+                    // start off paused
+                    mpv.pause().await.expect("failed to pause");
                 }
             }
-        });
+        }
     }
 }
 
@@ -153,7 +153,7 @@ fn main() {
     let mpv = MpvPlayer {
         ipc_path: args.ipc_path,
     };
-    let mpv_handle = thread::spawn(move || mpv.run(args.autostart, vd_rx));
+    let mpv_handle = rt.spawn(mpv.run(args.autostart, vd_rx));
 
     thread::spawn(|| {
         mqtt_listen(connection, pt_tx);
@@ -172,7 +172,7 @@ fn main() {
         }
     });
 
-    mpv_handle.join().unwrap();
+    rt.block_on(mpv_handle).unwrap();
     rt.block_on(relay_handle).unwrap();
 }
 
