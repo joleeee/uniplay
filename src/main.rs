@@ -129,7 +129,8 @@ struct Args {
     spoof: bool,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args: Args = argh::from_env();
     let topic = format!("{}/{}", "uniplay", args.room);
     let user_id = {
@@ -141,9 +142,7 @@ fn main() {
     let (pt_tx, pt_rx) = mpsc::channel::<ProtoMessage>(64);
     let (vd_tx, vd_rx) = mpsc::channel::<VideoMessage>(64);
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
-
-    let relay_handle = rt.spawn(relay(pt_rx, vd_tx));
+    let relay_handle = tokio::spawn(relay(pt_rx, vd_tx));
 
     let mut mqttoptions = MqttOptions::new(&user_id, args.server, args.port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
@@ -153,7 +152,7 @@ fn main() {
     let mpv = MpvPlayer {
         ipc_path: args.ipc_path,
     };
-    let mpv_handle = rt.spawn(mpv.run(args.autostart, vd_rx));
+    let mpv_handle = tokio::spawn(mpv.run(args.autostart, vd_rx));
 
     thread::spawn(|| {
         mqtt_listen(connection, pt_tx);
@@ -172,8 +171,8 @@ fn main() {
         }
     });
 
-    rt.block_on(mpv_handle).unwrap();
-    rt.block_on(relay_handle).unwrap();
+    mpv_handle.await.unwrap();
+    relay_handle.await.unwrap();
 }
 
 fn mqtt_listen(mut connection: Connection, tx: mpsc::Sender<ProtoMessage>) {
