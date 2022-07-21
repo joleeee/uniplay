@@ -7,8 +7,9 @@ edition = "2021"
 
 [dependencies]
 argh = "0.1.8"
-mpvipc = "1.2.1"
+mpvi = { git = "https://github.com/joleeee/mpvi" }
 rand = "0.8.5"
 rumqttc = "0.13.0"
 serde = { version = "1.0.139", features = ["derive"] }
 serde_json = "1.0.82"
+tokio = { version = "1", features = ["full"] }

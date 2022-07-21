@@ -1,5 +1,5 @@
 use argh::FromArgs;
-use mpvipc::*;
+use mpvi::{option, Mpv};
 use rand::Rng;
 use rumqttc::{Client, Connection, MqttOptions, QoS};
 use serde::{Deserialize, Serialize};
@@ -57,50 +57,42 @@ impl VideoPlayer for MpvPlayer {
             thread::sleep(Duration::from_millis(500));
         }
 
-        let mpv = Mpv::connect(&self.ipc_path).unwrap_or_else(|e| {
-            println!("error connecting to mpv, is mpv running?");
-            println!(
-                r#"start with "mpv --input-ipc-server={} --idle""#,
-                self.ipc_path
-            );
-            panic!("{}", e);
-        });
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let mpv = Mpv::new(&self.ipc_path).await.unwrap_or_else(|e| {
+                println!("error connecting to mpv, is mpv running?");
+                println!(
+                    r#"start with "mpv --input-ipc-server={} --idle""#,
+                    self.ipc_path
+                );
+                panic!("{}", e);
+            });
 
-        for msg in rx.iter() {
-            println!("mpv: {:?}", &msg);
-            match msg {
-                VideoMessage::Pause => {
-                    mpv.pause().expect("failed to pause");
-                }
-                VideoMessage::Unpause => {
-                    mpv.set_property("pause", false).expect("failed to unpause");
-                }
-                VideoMessage::Seek(pos) => {
-                    mpv.seek(pos, SeekOptions::Absolute)
-                        .expect("failed to seek");
-                }
-                VideoMessage::Media(path) => {
-                    mpv.playlist_add(
-                        &path,
-                        PlaylistAddTypeOptions::File,
-                        PlaylistAddOptions::Append,
-                    )
-                    .unwrap();
+            for msg in rx.iter() {
+                println!("mpv: {:?}", &msg);
+                match msg {
+                    VideoMessage::Pause => {
+                        mpv.pause().await.expect("failed to pause");
+                    }
+                    VideoMessage::Unpause => {
+                        mpv.unpause().await.expect("failed to unpause");
+                    }
+                    VideoMessage::Seek(pos) => {
+                        mpv.seek(pos, option::Seek::Absolute)
+                            .await
+                            .expect("failed to seek");
+                    }
+                    VideoMessage::Media(path) => {
+                        mpv.load_file(&path, option::Insertion::Replace)
+                            .await
+                            .expect("failed to load file");
 
-                    let playlist = mpv.get_playlist().unwrap();
-                    let entry = playlist
-                        .0
-                        .iter()
-                        .rev()
-                        .find(|entry| entry.filename == path)
-                        .unwrap();
-
-                    mpv.playlist_play_id(entry.id).unwrap();
-                    // but start off paused
-                    mpv.pause().unwrap();
+                        // start off paused
+                        mpv.pause().await.expect("failed to pause");
+                    }
                 }
             }
-        }
+        });
     }
 }
 
