@@ -6,10 +6,10 @@ use serde::{Deserialize, Serialize};
 use std::{
     io,
     process::{Command, Stdio},
-    sync::mpsc,
     thread,
     time::Duration,
 };
+use tokio::sync::mpsc;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 /// Network messages
@@ -40,7 +40,7 @@ struct MpvPlayer {
 }
 
 impl VideoPlayer for MpvPlayer {
-    fn run(&self, autostart: bool, rx: mpsc::Receiver<VideoMessage>) {
+    fn run(&self, autostart: bool, mut rx: mpsc::Receiver<VideoMessage>) {
         if autostart {
             let ipc_arg = format!("{}={}", "--input-ipc-server", self.ipc_path);
 
@@ -68,7 +68,8 @@ impl VideoPlayer for MpvPlayer {
                 panic!("{}", e);
             });
 
-            for msg in rx.iter() {
+            loop {
+                let msg = rx.recv().await.expect("closed");
                 println!("mpv: {:?}", &msg);
                 match msg {
                     VideoMessage::Pause => {
@@ -137,8 +138,8 @@ fn main() {
         format!("uniplayuser{}", id)
     };
 
-    let (pt_tx, pt_rx) = mpsc::channel::<ProtoMessage>();
-    let (vd_tx, vd_rx) = mpsc::channel::<VideoMessage>();
+    let (pt_tx, pt_rx) = mpsc::channel::<ProtoMessage>(64);
+    let (vd_tx, vd_rx) = mpsc::channel::<VideoMessage>(64);
 
     let relay_handle = thread::spawn(move || relay(pt_rx, vd_tx));
 
@@ -175,6 +176,7 @@ fn main() {
 
 fn mqtt_listen(mut connection: Connection, tx: mpsc::Sender<ProtoMessage>) {
     use rumqttc::{Event, Packet};
+
     for msg in connection
         .iter()
         .map(Result::unwrap)
@@ -194,12 +196,14 @@ fn mqtt_listen(mut connection: Connection, tx: mpsc::Sender<ProtoMessage>) {
         })
         .map(|publish| serde_json::from_slice(&publish.payload).unwrap())
     {
-        tx.send(msg).unwrap();
+        // TODO
+        tx.blocking_send(msg).unwrap();
     }
 }
 
-fn relay(rx: mpsc::Receiver<ProtoMessage>, tx: mpsc::Sender<VideoMessage>) {
-    for msg in rx.iter() {
+fn relay(mut rx: mpsc::Receiver<ProtoMessage>, tx: mpsc::Sender<VideoMessage>) {
+    loop {
+        let msg = rx.blocking_recv().expect("closed");
         println!("relay: {:?}", msg);
         match msg {
             ProtoMessage::Join(name) => {
@@ -209,14 +213,14 @@ fn relay(rx: mpsc::Receiver<ProtoMessage>, tx: mpsc::Sender<VideoMessage>) {
                 println!("<{}> {}", from, msg);
             }
             ProtoMessage::PlayFrom(pos) => {
-                tx.send(VideoMessage::Seek(pos)).unwrap();
-                tx.send(VideoMessage::Unpause).unwrap();
+                tx.blocking_send(VideoMessage::Seek(pos)).unwrap();
+                tx.blocking_send(VideoMessage::Unpause).unwrap();
             }
             ProtoMessage::Stop => {
-                tx.send(VideoMessage::Pause).unwrap();
+                tx.blocking_send(VideoMessage::Pause).unwrap();
             }
             ProtoMessage::Media(link) => {
-                tx.send(VideoMessage::Media(link)).unwrap();
+                tx.blocking_send(VideoMessage::Media(link)).unwrap();
             }
         }
     }
