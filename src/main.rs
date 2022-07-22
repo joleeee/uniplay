@@ -217,7 +217,6 @@ async fn mqtt_listen(mut eventloop: EventLoop, tx: mpsc::Sender<ProtoMessage>) {
 async fn relay(mut rx: mpsc::Receiver<ProtoMessage>, tx: mpsc::Sender<VideoMessage>) {
     loop {
         let msg = rx.recv().await.expect("closed");
-        println!("relay: {:?}", msg);
         match msg {
             ProtoMessage::Join(name) => {
                 println!("{} joined the room.", name);
