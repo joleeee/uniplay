@@ -1,5 +1,5 @@
 use rumqttc::{AsyncClient, QoS};
-use std::time::Duration;
+use std::{str::FromStr, time::Duration};
 use strum::EnumString;
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
@@ -27,13 +27,43 @@ impl CliMode {
     }
 }
 
-#[derive(EnumString)]
-#[strum(serialize_all = "snake_case")]
 enum ReplCmd {
-    Set,
+    Set(String),
     Pause,
-    Play,
-    Chat,
+    Play(f64),
+    Chat(String),
+}
+
+#[derive(Debug)]
+enum ReplParseError {
+    NoSuchCommand,
+    BadArgument,
+}
+
+impl FromStr for ReplCmd {
+    type Err = ReplParseError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (keyword, arg) = s.split_once(' ').unwrap_or((s, ""));
+        match keyword {
+            "set" => Ok(ReplCmd::Set(arg.to_string())),
+            "pause" => Ok(ReplCmd::Pause),
+            "play" => {
+                if let Ok(dur) = arg.parse() {
+                    Ok(ReplCmd::Play(dur))
+                } else {
+                    Err(ReplParseError::BadArgument)
+                }
+            }
+            "chat" => {
+                if arg.trim().len() > 0 {
+                    Ok(ReplCmd::Chat(arg.to_string()))
+                } else {
+                    Err(ReplParseError::BadArgument)
+                }
+            }
+            _ => Err(ReplParseError::NoSuchCommand),
+        }
+    }
 }
 
 async fn repl(client: AsyncClient, user: &String, topic: &String) {
@@ -44,27 +74,21 @@ async fn repl(client: AsyncClient, user: &String, topic: &String) {
     let mut lines = stdin.lines();
 
     while let Some(line) = lines.next_line().await.unwrap() {
-        let (keyword, arg) = {
-            let raw = line.trim();
-
-            raw.split_once(' ').unwrap_or((raw, ""))
-        };
-
         let keyword: ReplCmd = {
-            let cmd = keyword.parse();
+            let cmd = line.parse();
             if let Ok(cmd) = cmd {
                 cmd
             } else {
-                println!("repl: unknown command");
+                println!("repl: unknown command: {:?}", cmd.err().unwrap());
                 continue;
             }
         };
 
         let msg = match keyword {
-            ReplCmd::Set => ProtoMessage::Media(arg.to_string()),
+            ReplCmd::Set(p) => ProtoMessage::Media(p),
             ReplCmd::Pause => ProtoMessage::Stop,
-            ReplCmd::Play => ProtoMessage::PlayFrom(arg.parse().unwrap()),
-            ReplCmd::Chat => ProtoMessage::Chat(user.clone(), arg.to_string()),
+            ReplCmd::Play(d) => ProtoMessage::PlayFrom(d),
+            ReplCmd::Chat(m) => ProtoMessage::Chat(user.clone(), m),
         };
 
         let msg = serde_json::to_string(&msg).unwrap();
