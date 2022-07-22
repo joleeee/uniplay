@@ -50,14 +50,19 @@ impl VideoPlayer for MpvPlayer {
     fn start(&self) -> std::process::Child {
         let ipc_arg = format!("{}={}", "--input-ipc-server", self.ipc_path);
 
-        Command::new("mpv")
+        let c = Command::new("mpv")
             .arg(ipc_arg)
             .arg("--idle")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             // keep stderr
             .spawn()
-            .unwrap()
+            .unwrap();
+
+        // ew
+        thread::sleep(Duration::from_millis(400));
+
+        c
     }
 
     async fn run(self, mut rx: mpsc::Receiver<VideoMessage>) {
