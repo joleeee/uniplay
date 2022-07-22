@@ -37,7 +37,8 @@ pub enum VideoMessage {
 
 #[async_trait]
 trait VideoPlayer {
-    async fn run(self, autostart: bool, rx: mpsc::Receiver<VideoMessage>);
+    fn start(&self) -> std::process::Child;
+    async fn run(self, rx: mpsc::Receiver<VideoMessage>);
 }
 
 struct MpvPlayer {
@@ -46,23 +47,20 @@ struct MpvPlayer {
 
 #[async_trait]
 impl VideoPlayer for MpvPlayer {
-    async fn run(self, autostart: bool, mut rx: mpsc::Receiver<VideoMessage>) {
-        if autostart {
-            let ipc_arg = format!("{}={}", "--input-ipc-server", self.ipc_path);
+    fn start(&self) -> std::process::Child {
+        let ipc_arg = format!("{}={}", "--input-ipc-server", self.ipc_path);
 
-            Command::new("mpv")
-                .arg(ipc_arg)
-                .arg("--idle")
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                // keep stderr
-                .spawn()
-                .unwrap();
+        Command::new("mpv")
+            .arg(ipc_arg)
+            .arg("--idle")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            // keep stderr
+            .spawn()
+            .unwrap()
+    }
 
-            // ew
-            thread::sleep(Duration::from_millis(500));
-        }
-
+    async fn run(self, mut rx: mpsc::Receiver<VideoMessage>) {
         let mpv = Mpv::new(&self.ipc_path).await.unwrap_or_else(|e| {
             println!("error connecting to mpv, is mpv running?");
             println!(
@@ -161,7 +159,10 @@ async fn main() {
     let mpv_player = MpvPlayer {
         ipc_path: args.ipc_path,
     };
-    let mpv_handle = tokio::spawn(mpv_player.run(args.autostart, vd_rx));
+    if args.autostart {
+        mpv_player.start();
+    }
+    let mpv_handle = tokio::spawn(mpv_player.run(vd_rx));
 
     tokio::spawn(mqtt_listen(eventloop, pt_tx));
 
