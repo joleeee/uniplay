@@ -27,6 +27,15 @@ impl CliMode {
     }
 }
 
+#[derive(EnumString)]
+#[strum(serialize_all = "snake_case")]
+enum ReplCmd {
+    Set,
+    Pause,
+    Play,
+    Chat,
+}
+
 async fn repl(client: AsyncClient, user: &String, topic: &String) {
     println!("commands: [set <link>, play <seconds>, pause]");
 
@@ -41,24 +50,28 @@ async fn repl(client: AsyncClient, user: &String, topic: &String) {
             raw.split_once(' ').unwrap_or((raw, ""))
         };
 
-        let msg = match keyword {
-            "set" => Some(ProtoMessage::Media(arg.to_string())),
-            "pause" => Some(ProtoMessage::Stop),
-            "play" => Some(ProtoMessage::PlayFrom(arg.parse().unwrap())),
-            "chat" => Some(ProtoMessage::Chat(user.clone(), arg.to_string())),
-            _ => {
-                println!("unknown command");
-                None
+        let keyword: ReplCmd = {
+            let cmd = keyword.parse();
+            if let Ok(cmd) = cmd {
+                cmd
+            } else {
+                println!("repl: unknown command");
+                continue;
             }
         };
 
-        if let Some(msg) = msg {
-            let msg = serde_json::to_string(&msg).unwrap();
-            client
-                .publish(topic, QoS::ExactlyOnce, false, msg)
-                .await
-                .unwrap();
-        }
+        let msg = match keyword {
+            ReplCmd::Set => ProtoMessage::Media(arg.to_string()),
+            ReplCmd::Pause => ProtoMessage::Stop,
+            ReplCmd::Play => ProtoMessage::PlayFrom(arg.parse().unwrap()),
+            ReplCmd::Chat => ProtoMessage::Chat(user.clone(), arg.to_string()),
+        };
+
+        let msg = serde_json::to_string(&msg).unwrap();
+        client
+            .publish(topic, QoS::ExactlyOnce, false, msg)
+            .await
+            .unwrap();
     }
 }
 
