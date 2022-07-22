@@ -121,6 +121,10 @@ struct Args {
     /// server port
     port: u16,
 
+    /// username
+    #[argh(option, long = "name", default = "rnd_name()")]
+    name: String,
+
     #[argh(option, long = "room", default = r#"String::from("default_room")"#)]
     /// name of room
     room: String,
@@ -134,25 +138,26 @@ struct Args {
     cli: CliMode,
 }
 
+fn rnd_name() -> String {
+    let mut rng = rand::thread_rng();
+    let id: u32 = rng.gen();
+    format!("uniplayuser{}", id)
+}
+
 #[tokio::main]
 async fn main() {
     let args: Args = argh::from_env();
     let topic = format!("{}/{}", "uniplay", args.room);
-    let user_id = {
-        let mut rng = rand::thread_rng();
-        let id: u32 = rng.gen();
-        format!("uniplayuser{}", id)
-    };
 
     let (pt_tx, pt_rx) = mpsc::channel::<ProtoMessage>(8);
     let (vd_tx, vd_rx) = mpsc::channel::<VideoMessage>(8);
 
-    let mut mqttoptions = MqttOptions::new(&user_id, args.server, args.port);
+    let mut mqttoptions = MqttOptions::new(&args.name, args.server, args.port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     let (client, eventloop) = AsyncClient::new(mqttoptions, 10);
     client.subscribe(&topic, QoS::ExactlyOnce).await.unwrap();
 
-    let msg = serde_json::to_string(&ProtoMessage::Join(user_id.clone())).unwrap();
+    let msg = serde_json::to_string(&ProtoMessage::Join(args.name.clone())).unwrap();
     client
         .publish(&topic, QoS::ExactlyOnce, false, msg.as_bytes())
         .await
@@ -171,7 +176,7 @@ async fn main() {
     tokio::spawn(mqtt_listen(eventloop, pt_tx));
 
     tokio::spawn(async move {
-        args.cli.run(client, &user_id, &topic).await;
+        args.cli.run(client, &args.name, &topic).await;
     });
 
     mpv_handle.await.unwrap();
