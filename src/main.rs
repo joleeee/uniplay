@@ -145,27 +145,27 @@ async fn main() {
     let (pt_tx, pt_rx) = mpsc::channel::<ProtoMessage>(8);
     let (vd_tx, vd_rx) = mpsc::channel::<VideoMessage>(8);
 
-    let relay_handle = tokio::spawn(relay(pt_rx, vd_tx));
-
     let mut mqttoptions = MqttOptions::new(&user_id, args.server, args.port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     let (client, eventloop) = AsyncClient::new(mqttoptions, 10);
     client.subscribe(&topic, QoS::ExactlyOnce).await.unwrap();
 
-    let mpv = MpvPlayer {
+    let msg = serde_json::to_string(&ProtoMessage::Join(user_id.clone())).unwrap();
+    client
+        .publish(&topic, QoS::ExactlyOnce, false, msg.as_bytes())
+        .await
+        .unwrap();
+
+    tokio::spawn(relay(pt_rx, vd_tx));
+
+    let mpv_player = MpvPlayer {
         ipc_path: args.ipc_path,
     };
-    let mpv_handle = tokio::spawn(mpv.run(args.autostart, vd_rx));
+    let mpv_handle = tokio::spawn(mpv_player.run(args.autostart, vd_rx));
 
     tokio::spawn(mqtt_listen(eventloop, pt_tx));
 
     tokio::spawn(async move {
-        let msg = serde_json::to_string(&ProtoMessage::Join(user_id.clone())).unwrap();
-        client
-            .publish(&topic, QoS::ExactlyOnce, false, msg.as_bytes())
-            .await
-            .unwrap();
-
         if args.spoof {
             mqtt_spoof(client, &topic).await
         } else {
@@ -174,7 +174,6 @@ async fn main() {
     });
 
     mpv_handle.await.unwrap();
-    relay_handle.await.unwrap();
 }
 
 async fn mqtt_listen(mut eventloop: EventLoop, tx: mpsc::Sender<ProtoMessage>) {
