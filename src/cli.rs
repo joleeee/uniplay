@@ -44,23 +44,24 @@ impl FromStr for ReplCmd {
     type Err = ReplParseError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let (keyword, arg) = s.split_once(' ').unwrap_or((s, ""));
+        let arg = arg.trim();
+
+        fn arg_to_string(arg: &str) -> Result<String, ReplParseError> {
+            if arg.len() > 0 {
+                Ok(arg.to_string())
+            } else {
+                Err(ReplParseError::BadArgument)
+            }
+        }
+
         match keyword {
-            "set" => Ok(ReplCmd::Set(arg.to_string())),
+            "set" => Ok(ReplCmd::Set(arg_to_string(arg)?)),
             "pause" => Ok(ReplCmd::Pause),
-            "play" => {
-                if let Ok(dur) = arg.parse() {
-                    Ok(ReplCmd::Play(dur))
-                } else {
-                    Err(ReplParseError::BadArgument)
-                }
-            }
-            "chat" => {
-                if arg.trim().len() > 0 {
-                    Ok(ReplCmd::Chat(arg.to_string()))
-                } else {
-                    Err(ReplParseError::BadArgument)
-                }
-            }
+            "play" => match arg.parse() {
+                Ok(dur) => Ok(ReplCmd::Play(dur)),
+                Err(_) => Err(ReplParseError::BadArgument),
+            },
+            "chat" => Ok(ReplCmd::Chat(arg_to_string(arg)?)),
             _ => Err(ReplParseError::NoSuchCommand),
         }
     }
