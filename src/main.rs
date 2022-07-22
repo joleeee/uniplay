@@ -2,15 +2,18 @@ use argh::FromArgs;
 use async_trait::async_trait;
 use mpvi::{option, Mpv};
 use rand::Rng;
-use rumqttc::{Client, Connection, MqttOptions, QoS};
+use rumqttc::{AsyncClient, EventLoop, MqttOptions, QoS};
 use serde::{Deserialize, Serialize};
 use std::{
-    io,
     process::{Command, Stdio},
     thread,
     time::Duration,
 };
-use tokio::sync::mpsc;
+use tokio::{
+    io::{AsyncBufReadExt, BufReader},
+    sync::mpsc,
+    time::sleep,
+};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 /// Network messages
@@ -146,28 +149,27 @@ async fn main() {
 
     let mut mqttoptions = MqttOptions::new(&user_id, args.server, args.port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
-    let (mut client, connection) = Client::new(mqttoptions, 10);
-    client.subscribe(&topic, QoS::ExactlyOnce).unwrap();
+    let (client, eventloop) = AsyncClient::new(mqttoptions, 10);
+    client.subscribe(&topic, QoS::ExactlyOnce).await.unwrap();
 
     let mpv = MpvPlayer {
         ipc_path: args.ipc_path,
     };
     let mpv_handle = tokio::spawn(mpv.run(args.autostart, vd_rx));
 
-    thread::spawn(|| {
-        mqtt_listen(connection, pt_tx);
-    });
+    tokio::spawn(mqtt_listen(eventloop, pt_tx));
 
-    thread::spawn(move || {
+    tokio::spawn(async move {
         let msg = serde_json::to_string(&ProtoMessage::Join(user_id.clone())).unwrap();
         client
-            .publish(&topic, QoS::ExactlyOnce, false, msg)
+            .publish(&topic, QoS::ExactlyOnce, false, msg.as_bytes())
+            .await
             .unwrap();
 
         if args.spoof {
-            mqtt_spoof(client, &topic);
+            mqtt_spoof(client, &topic).await
         } else {
-            repl(client, user_id, &topic);
+            repl(client, user_id, &topic).await
         }
     });
 
@@ -175,30 +177,31 @@ async fn main() {
     relay_handle.await.unwrap();
 }
 
-fn mqtt_listen(mut connection: Connection, tx: mpsc::Sender<ProtoMessage>) {
+async fn mqtt_listen(mut eventloop: EventLoop, tx: mpsc::Sender<ProtoMessage>) {
     use rumqttc::{Event, Packet};
 
-    for msg in connection
-        .iter()
-        .map(Result::unwrap)
-        .filter_map(|notification| {
-            if let Event::Incoming(v) = notification {
-                Some(v)
-            } else {
-                None
-            }
-        })
-        .filter_map(|incoming| {
-            if let Packet::Publish(p) = incoming {
-                Some(p)
-            } else {
-                None
-            }
-        })
-        .map(|publish| serde_json::from_slice(&publish.payload).unwrap())
-    {
-        // TODO
-        tx.blocking_send(msg).unwrap();
+    fn decode_event(event: Event) -> Option<ProtoMessage> {
+        let incoming = if let Event::Incoming(v) = event {
+            Some(v)
+        } else {
+            None
+        }?;
+
+        let publish = if let Packet::Publish(p) = incoming {
+            Some(p)
+        } else {
+            None
+        }?;
+
+        Some(serde_json::from_slice(&publish.payload).unwrap())
+    }
+
+    loop {
+        let event = eventloop.poll().await.unwrap();
+        let msg = decode_event(event);
+        if let Some(msg) = msg {
+            tx.send(msg).await.unwrap();
+        }
     }
 }
 
@@ -227,14 +230,16 @@ async fn relay(mut rx: mpsc::Receiver<ProtoMessage>, tx: mpsc::Sender<VideoMessa
     }
 }
 
-fn repl(mut client: Client, user: String, topic: &String) {
+async fn repl(client: AsyncClient, user: String, topic: &String) {
     println!("commands: [set <link>, play <seconds>, pause]");
 
-    let stdin = io::stdin();
-    let mut input = String::new();
-    while stdin.read_line(&mut input).is_ok() {
+    let stdin = tokio::io::stdin();
+    let stdin = BufReader::new(stdin);
+    let mut lines = stdin.lines();
+
+    while let Some(line) = lines.next_line().await.unwrap() {
         let (keyword, arg) = {
-            let raw = input.trim();
+            let raw = line.trim();
 
             raw.split_once(' ').unwrap_or((raw, ""))
         };
@@ -252,14 +257,15 @@ fn repl(mut client: Client, user: String, topic: &String) {
 
         if let Some(msg) = msg {
             let msg = serde_json::to_string(&msg).unwrap();
-            client.publish(topic, QoS::ExactlyOnce, false, msg).unwrap();
+            client
+                .publish(topic, QoS::ExactlyOnce, false, msg)
+                .await
+                .unwrap();
         }
-
-        input = String::new();
     }
 }
 
-fn mqtt_spoof(mut client: Client, topic: &String) {
+async fn mqtt_spoof(client: AsyncClient, topic: &String) {
     let messages = vec![
         ProtoMessage::Media("https://youtu.be/jNQXAC9IVRw".to_string()),
         ProtoMessage::PlayFrom(2.0),
@@ -267,12 +273,15 @@ fn mqtt_spoof(mut client: Client, topic: &String) {
         ProtoMessage::PlayFrom(4.0),
     ];
 
-    thread::sleep(Duration::from_millis(500));
+    sleep(Duration::from_millis(500)).await;
     for msg in messages {
         let msg = serde_json::to_string(&msg).unwrap();
 
-        client.publish(topic, QoS::ExactlyOnce, false, msg).unwrap();
+        client
+            .publish(topic, QoS::ExactlyOnce, false, msg)
+            .await
+            .unwrap();
 
-        thread::sleep(Duration::from_millis(10_000));
+        sleep(Duration::from_millis(10_000)).await;
     }
 }
