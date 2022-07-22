@@ -142,8 +142,8 @@ async fn main() {
         format!("uniplayuser{}", id)
     };
 
-    let (pt_tx, pt_rx) = mpsc::channel::<ProtoMessage>(64);
-    let (vd_tx, vd_rx) = mpsc::channel::<VideoMessage>(64);
+    let (pt_tx, pt_rx) = mpsc::channel::<ProtoMessage>(8);
+    let (vd_tx, vd_rx) = mpsc::channel::<VideoMessage>(8);
 
     let relay_handle = tokio::spawn(relay(pt_rx, vd_tx));
 
