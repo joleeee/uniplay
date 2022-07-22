@@ -1,5 +1,6 @@
 use argh::FromArgs;
 use async_trait::async_trait;
+use futures::FutureExt;
 use mpvi::{option, Mpv};
 use rand::Rng;
 use rumqttc::{AsyncClient, EventLoop, MqttOptions, QoS};
@@ -205,8 +206,8 @@ async fn mqtt_listen(mut eventloop: EventLoop, tx: mpsc::Sender<ProtoMessage>) {
     }
 
     loop {
-        let event = eventloop.poll().await.unwrap();
-        let msg = decode_event(event);
+        let msg = eventloop.poll().map(Result::unwrap).map(decode_event).await;
+
         if let Some(msg) = msg {
             tx.send(msg).await.unwrap();
         }
