@@ -12,7 +12,7 @@ use std::{
 use tokio::sync::mpsc;
 
 mod cli;
-use cli::{repl, spoof};
+use cli::CliMode;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 /// Network messages
@@ -129,9 +129,9 @@ struct Args {
     /// path to mpv socket
     ipc_path: String,
 
-    #[argh(switch)]
+    #[argh(option, long = "cli", default = "CliMode::Repl")]
     /// send fake requests for testing
-    spoof: bool,
+    cli: CliMode,
 }
 
 #[tokio::main]
@@ -171,11 +171,7 @@ async fn main() {
     tokio::spawn(mqtt_listen(eventloop, pt_tx));
 
     tokio::spawn(async move {
-        if args.spoof {
-            spoof(client, &topic).await
-        } else {
-            repl(client, user_id, &topic).await
-        }
+        args.cli.run(client, &user_id, &topic).await;
     });
 
     mpv_handle.await.unwrap();

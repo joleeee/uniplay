@@ -1,5 +1,6 @@
 use rumqttc::{AsyncClient, QoS};
 use std::time::Duration;
+use strum::EnumString;
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
     time::sleep,
@@ -7,7 +8,26 @@ use tokio::{
 
 use crate::ProtoMessage;
 
-pub async fn repl(client: AsyncClient, user: String, topic: &String) {
+#[derive(EnumString, Debug, Clone, Copy)]
+pub enum CliMode {
+    Repl,
+    Spoof,
+}
+
+impl CliMode {
+    pub async fn run(&self, client: AsyncClient, user: &String, topic: &String) {
+        match self {
+            Self::Repl => {
+                repl(client, user, topic).await;
+            }
+            Self::Spoof => {
+                spoof(client, topic).await;
+            }
+        }
+    }
+}
+
+async fn repl(client: AsyncClient, user: &String, topic: &String) {
     println!("commands: [set <link>, play <seconds>, pause]");
 
     let stdin = tokio::io::stdin();
@@ -42,7 +62,7 @@ pub async fn repl(client: AsyncClient, user: String, topic: &String) {
     }
 }
 
-pub async fn spoof(client: AsyncClient, topic: &String) {
+async fn spoof(client: AsyncClient, topic: &String) {
     let messages = vec![
         ProtoMessage::Media("https://youtu.be/jNQXAC9IVRw".to_string()),
         ProtoMessage::PlayFrom(2.0),

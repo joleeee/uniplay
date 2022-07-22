@@ -782,6 +782,7 @@ dependencies = [
  "rumqttc",
  "serde",
  "serde_json",
+ "strum",
  "tokio",
 ]
 
