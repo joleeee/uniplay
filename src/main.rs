@@ -193,7 +193,10 @@ async fn mqtt_listen(mut eventloop: EventLoop, tx: mpsc::Sender<ProtoMessage>) {
             None
         }?;
 
-        Some(serde_json::from_slice(&publish.payload).unwrap())
+        serde_json::from_slice(&publish.payload).unwrap_or_else(|e| {
+            println!("deser error: {}", e);
+            None
+        })
     }
 
     loop {
