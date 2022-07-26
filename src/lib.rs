@@ -3,11 +3,11 @@ use futures::FutureExt;
 use rumqttc::{AsyncClient, EventLoop, MqttOptions, QoS};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use tokio::sync::mpsc;
 
 mod mpv;
 pub use mpv::MpvPlayer;
 
-use tokio::sync::mpsc;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 /// Network messages
 pub enum ProtoMessage {
