@@ -15,7 +15,7 @@ pub enum CliMode {
 }
 
 impl CliMode {
-    pub async fn run(&self, client: AsyncClient, user: &String, topic: &String) {
+    pub async fn run(&self, client: AsyncClient, user: &str, topic: &str) {
         match self {
             Self::Repl => {
                 repl(client, user, topic).await;
@@ -47,7 +47,7 @@ impl FromStr for ReplCmd {
         let arg = arg.trim();
 
         fn arg_to_string(arg: &str) -> Result<String, ReplParseError> {
-            if arg.len() > 0 {
+            if !arg.is_empty() {
                 Ok(arg.to_string())
             } else {
                 Err(ReplParseError::BadArgument)
@@ -67,7 +67,7 @@ impl FromStr for ReplCmd {
     }
 }
 
-async fn repl(client: AsyncClient, user: &String, topic: &String) {
+async fn repl(client: AsyncClient, user: &str, topic: &str) {
     println!("commands: [set <link>, play <seconds>, pause]");
 
     let stdin = tokio::io::stdin();
@@ -89,7 +89,7 @@ async fn repl(client: AsyncClient, user: &String, topic: &String) {
             ReplCmd::Set(p) => ProtoMessage::Media(p),
             ReplCmd::Pause => ProtoMessage::Stop,
             ReplCmd::Play(d) => ProtoMessage::PlayFrom(d),
-            ReplCmd::Chat(m) => ProtoMessage::Chat(user.clone(), m),
+            ReplCmd::Chat(m) => ProtoMessage::Chat(user.to_owned(), m),
         };
 
         let msg = serde_json::to_string(&msg).unwrap();
@@ -100,7 +100,7 @@ async fn repl(client: AsyncClient, user: &String, topic: &String) {
     }
 }
 
-async fn spoof(client: AsyncClient, topic: &String) {
+async fn spoof(client: AsyncClient, topic: &str) {
     let messages = vec![
         ProtoMessage::Media("https://youtu.be/jNQXAC9IVRw".to_string()),
         ProtoMessage::PlayFrom(2.0),
