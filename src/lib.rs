@@ -8,7 +8,7 @@ mod mpv;
 pub use mpv::MpvPlayer;
 
 mod state;
-use state::{mqtt_listen, relay};
+use state::State;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 /// Network messages
@@ -46,9 +46,6 @@ pub struct UniplayOpts {
 
 impl UniplayOpts {
     pub async fn spawn(&self) -> (AsyncClient, mpsc::Receiver<VideoMessage>) {
-        let (pt_tx, pt_rx) = mpsc::channel::<ProtoMessage>(8);
-        let (vd_tx, vd_rx) = mpsc::channel::<VideoMessage>(8);
-
         let mut mqttoptions = MqttOptions::new(&self.name, &self.server, self.port);
         mqttoptions.set_keep_alive(Duration::from_secs(5));
         let (client, eventloop) = AsyncClient::new(mqttoptions, 10);
@@ -63,9 +60,7 @@ impl UniplayOpts {
             .await
             .unwrap();
 
-        tokio::spawn(relay(pt_rx, vd_tx));
-
-        tokio::spawn(mqtt_listen(eventloop, pt_tx));
+        let vd_rx = State::spawn(eventloop).await;
 
         (client, vd_rx)
     }

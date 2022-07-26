@@ -4,7 +4,21 @@ use tokio::sync::mpsc;
 
 use crate::{ProtoMessage, VideoMessage};
 
-pub async fn mqtt_listen(mut eventloop: EventLoop, tx: mpsc::Sender<ProtoMessage>) {
+pub struct State;
+
+impl State {
+    pub async fn spawn(eventloop: EventLoop) -> mpsc::Receiver<VideoMessage> {
+        let (pt_sender, pt_receiver) = mpsc::channel::<ProtoMessage>(8);
+        let (vd_sender, vd_receiver) = mpsc::channel::<VideoMessage>(8);
+
+        tokio::spawn(mqtt_listen(eventloop, pt_sender));
+        tokio::spawn(relay(pt_receiver, vd_sender));
+
+        vd_receiver
+    }
+}
+
+async fn mqtt_listen(mut eventloop: EventLoop, sender: mpsc::Sender<ProtoMessage>) {
     use rumqttc::{Event, Packet};
 
     fn decode_event(event: Event) -> Option<ProtoMessage> {
@@ -30,14 +44,14 @@ pub async fn mqtt_listen(mut eventloop: EventLoop, tx: mpsc::Sender<ProtoMessage
         let msg = eventloop.poll().map(Result::unwrap).map(decode_event).await;
 
         if let Some(msg) = msg {
-            tx.send(msg).await.unwrap();
+            sender.send(msg).await.unwrap();
         }
     }
 }
 
-pub async fn relay(mut rx: mpsc::Receiver<ProtoMessage>, tx: mpsc::Sender<VideoMessage>) {
+async fn relay(mut receiver: mpsc::Receiver<ProtoMessage>, sender: mpsc::Sender<VideoMessage>) {
     loop {
-        let msg = rx.recv().await.expect("closed");
+        let msg = receiver.recv().await.expect("closed");
         match msg {
             ProtoMessage::Join(name) => {
                 println!("{} joined the room.", name);
@@ -46,14 +60,14 @@ pub async fn relay(mut rx: mpsc::Receiver<ProtoMessage>, tx: mpsc::Sender<VideoM
                 println!("<{}> {}", from, msg);
             }
             ProtoMessage::PlayFrom(pos) => {
-                tx.send(VideoMessage::Seek(pos)).await.unwrap();
-                tx.send(VideoMessage::Unpause).await.unwrap();
+                sender.send(VideoMessage::Seek(pos)).await.unwrap();
+                sender.send(VideoMessage::Unpause).await.unwrap();
             }
             ProtoMessage::Stop => {
-                tx.send(VideoMessage::Pause).await.unwrap();
+                sender.send(VideoMessage::Pause).await.unwrap();
             }
             ProtoMessage::Media(link) => {
-                tx.send(VideoMessage::Media(link)).await.unwrap();
+                sender.send(VideoMessage::Media(link)).await.unwrap();
             }
         }
     }
