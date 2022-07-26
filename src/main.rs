@@ -9,36 +9,36 @@ use uniplay::{MpvPlayer, ProtoMessage, VideoPlayer};
 #[derive(FromArgs, Debug)]
 /// Tool for syncing video playback
 struct Args {
-    #[argh(switch)]
     /// autostart mpv
+    #[argh(switch)]
     autostart: bool,
 
+    /// server ip/domain
     #[argh(
         option,
         long = "server",
         default = r#"String::from("test.mosquitto.org")"#
     )]
-    /// server ip/domain
     server: String,
 
-    #[argh(option, long = "port", default = "1883")]
     /// server port
+    #[argh(option, long = "port", default = "1883")]
     port: u16,
 
     /// username
     #[argh(option, long = "name", default = "rnd_name()")]
     name: String,
 
-    #[argh(option, long = "room", default = r#"String::from("default_room")"#)]
     /// name of room
+    #[argh(option, long = "room", default = r#"String::from("default_room")"#)]
     room: String,
 
-    #[argh(option, long = "ipc", default = r#"String::from("/tmp/mpv.sock")"#)]
     /// path to mpv socket
+    #[argh(option, long = "ipc", default = r#"String::from("/tmp/mpv.sock")"#)]
     ipc_path: String,
 
-    #[argh(option, long = "cli", default = "CliMode::Repl")]
     /// send fake requests for testing
+    #[argh(option, long = "cli", default = "CliMode::Repl")]
     cli: CliMode,
 }
 
