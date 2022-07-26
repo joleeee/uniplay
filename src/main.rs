@@ -59,7 +59,7 @@ async fn main() {
         port: args.port,
         topic: topic.clone(),
     };
-    let (client, vd_rx) = uni.spawn().await;
+    let (client, vd_receiver) = uni.spawn().await;
 
     let mpv_player = MpvPlayer {
         ipc_path: args.ipc_path,
@@ -67,7 +67,7 @@ async fn main() {
     if args.autostart {
         mpv_player.start();
     }
-    let mpv_handle = tokio::spawn(mpv_player.run(vd_rx));
+    let mpv_handle = tokio::spawn(mpv_player.run(vd_receiver));
 
     tokio::spawn(async move {
         args.cli.run(client, &args.name, &topic).await;

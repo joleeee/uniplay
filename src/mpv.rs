@@ -33,7 +33,7 @@ impl VideoPlayer for MpvPlayer {
         c
     }
 
-    async fn run(self, mut rx: mpsc::Receiver<VideoMessage>) {
+    async fn run(self, mut receiver: mpsc::Receiver<VideoMessage>) {
         let mpv = Mpv::new(&self.ipc_path).await.unwrap_or_else(|e| {
             println!("error connecting to mpv, is mpv running?");
             println!(
@@ -44,7 +44,7 @@ impl VideoPlayer for MpvPlayer {
         });
 
         loop {
-            let msg = rx.recv().await.expect("closed");
+            let msg = receiver.recv().await.expect("closed");
             println!("mpv: {:?}", &msg);
             match msg {
                 VideoMessage::Pause => {

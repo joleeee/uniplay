@@ -33,7 +33,7 @@ pub enum VideoMessage {
 #[async_trait]
 pub trait VideoPlayer {
     fn start(&self) -> std::process::Child;
-    async fn run(self, rx: mpsc::Receiver<VideoMessage>);
+    async fn run(self, receiver: mpsc::Receiver<VideoMessage>);
 }
 
 pub struct UniplayOpts {
@@ -60,8 +60,8 @@ impl UniplayOpts {
             .await
             .unwrap();
 
-        let vd_rx = State::spawn(eventloop).await;
+        let vd_receiver = State::spawn(eventloop).await;
 
-        (client, vd_rx)
+        (client, vd_receiver)
     }
 }
