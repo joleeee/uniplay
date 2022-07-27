@@ -9,6 +9,7 @@ use tokio::{
 use crate::ProtoMessage;
 
 #[derive(EnumString, Debug, Clone, Copy)]
+#[strum(serialize_all = "kebab-case")] // just want lowercase
 pub enum CliMode {
     Repl,
     Spoof,

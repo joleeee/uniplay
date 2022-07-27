@@ -37,7 +37,7 @@ struct Args {
     #[argh(option, long = "ipc", default = r#"String::from("/tmp/mpv.sock")"#)]
     ipc_path: String,
 
-    /// send fake requests for testing
+    /// cli mode: 'repl' or 'spoof'
     #[argh(option, long = "cli", default = "CliMode::Repl")]
     cli: CliMode,
 }
