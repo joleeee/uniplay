@@ -23,7 +23,7 @@ impl VideoPlayer for MpvPlayer {
             .arg("--idle")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            // keep stderr
+            .stderr(Stdio::null())
             .spawn()
             .unwrap();
 
