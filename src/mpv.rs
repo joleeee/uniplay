@@ -13,9 +13,18 @@ pub struct MpvPlayer {
     pub ipc_path: String,
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum MpvPlayerError {
+    #[error(
+        r#"failed to connect to mpv: `{0}`, is mpv running?
+start with "mpv --input-ipc-server=<ipc_path> --idle""#
+    )]
+    ConnectionError(std::io::Error),
+}
+
 #[async_trait]
 impl VideoPlayer for MpvPlayer {
-    type Error = std::io::Error;
+    type Error = MpvPlayerError;
 
     fn start(&self) -> std::process::Child {
         let ipc_arg = format!("{}={}", "--input-ipc-server", self.ipc_path);
@@ -43,12 +52,7 @@ impl VideoPlayer for MpvPlayer {
         let mpv = match Mpv::new(&self.ipc_path).await {
             Ok(mpv) => mpv,
             Err(e) => {
-                println!("error connecting to mpv, is mpv running?");
-                println!(
-                    r#"start with "mpv --input-ipc-server={} --idle""#,
-                    self.ipc_path
-                );
-                os_sender.send(e).expect("failed to send oneshot notif");
+                os_sender.send(MpvPlayerError::ConnectionError(e)).unwrap();
                 return;
             }
         };
