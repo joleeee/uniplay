@@ -76,9 +76,15 @@ async fn main() {
         args.cli.run(client, &args.name, &topic).await;
     });
 
-    let err = mpv_receiver.await.unwrap();
-    println!("{}", err);
-    mpv_handle.await.unwrap();
+    tokio::select! {
+        err = mpv_receiver => {
+            let err = err.expect("recv error");
+            println!("{}", err);
+        }
+        _ = mpv_handle => {
+            println!("mpv quit!");
+        }
+    }
 
     // stop even when repl is blocking for input
     std::process::exit(0);
