@@ -72,7 +72,7 @@ async fn main() {
     let (mpv_sender, mpv_receiver) = oneshot::channel();
     let mpv_handle = tokio::spawn(mpv_player.run(vd_receiver, mpv_sender));
 
-    tokio::spawn(async move {
+    let cli_handle = tokio::spawn(async move {
         args.cli.run(client, &args.name, &topic).await;
     });
 
@@ -83,6 +83,9 @@ async fn main() {
         }
         _ = mpv_handle => {
             println!("mpv quit!");
+        }
+        _ = cli_handle => {
+            println!("cli quit!");
         }
     }
 
