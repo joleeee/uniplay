@@ -77,15 +77,15 @@ async fn main() {
     });
 
     tokio::select! {
-        err = mpv_receiver => {
-            let err = err.expect("recv error");
-            println!("{}", err);
+        res = mpv_receiver => {
+            let res = res.expect("recv error");
+            println!("{}", res);
         }
-        err = mpv_handle => {
-            println!("mpv quit: {:?}", err);
+        res = mpv_handle => {
+            println!("mpv quit: {:?}", res);
         }
-        err = cli_handle => {
-            println!("cli quit: {:?}", err);
+        res = cli_handle => {
+            println!("cli quit: {:?}", res);
         }
     }
 
