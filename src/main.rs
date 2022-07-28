@@ -4,6 +4,7 @@ use rand::Rng;
 mod cli;
 use cli::CliMode;
 
+use tokio::sync::oneshot;
 use uniplay::{MpvPlayer, ProtoMessage, VideoPlayer};
 
 #[derive(FromArgs, Debug)]
@@ -67,11 +68,15 @@ async fn main() {
     if args.autostart {
         mpv_player.start();
     }
-    let mpv_handle = tokio::spawn(mpv_player.run(vd_receiver));
+
+    let (mpv_sender, mpv_receiver) = oneshot::channel();
+    let mpv_handle = tokio::spawn(mpv_player.run(vd_receiver, mpv_sender));
 
     tokio::spawn(async move {
         args.cli.run(client, &args.name, &topic).await;
     });
 
+    let err = mpv_receiver.await.unwrap();
+    println!("{}", err);
     mpv_handle.await.unwrap();
 }

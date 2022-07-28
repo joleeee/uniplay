@@ -5,7 +5,7 @@ use std::{
     thread,
     time::Duration,
 };
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::{VideoMessage, VideoPlayer};
 
@@ -15,6 +15,8 @@ pub struct MpvPlayer {
 
 #[async_trait]
 impl VideoPlayer for MpvPlayer {
+    type Error = std::io::Error;
+
     fn start(&self) -> std::process::Child {
         let ipc_arg = format!("{}={}", "--input-ipc-server", self.ipc_path);
 
@@ -33,15 +35,23 @@ impl VideoPlayer for MpvPlayer {
         c
     }
 
-    async fn run(self, mut receiver: mpsc::Receiver<VideoMessage>) {
-        let mpv = Mpv::new(&self.ipc_path).await.unwrap_or_else(|e| {
-            println!("error connecting to mpv, is mpv running?");
-            println!(
-                r#"start with "mpv --input-ipc-server={} --idle""#,
-                self.ipc_path
-            );
-            panic!("{}", e);
-        });
+    async fn run(
+        self,
+        mut receiver: mpsc::Receiver<VideoMessage>,
+        os_sender: oneshot::Sender<Self::Error>,
+    ) {
+        let mpv = match Mpv::new(&self.ipc_path).await {
+            Ok(mpv) => mpv,
+            Err(e) => {
+                println!("error connecting to mpv, is mpv running?");
+                println!(
+                    r#"start with "mpv --input-ipc-server={} --idle""#,
+                    self.ipc_path
+                );
+                os_sender.send(e).expect("failed to send oneshot notif");
+                return;
+            }
+        };
 
         loop {
             let msg = receiver.recv().await.expect("closed");
