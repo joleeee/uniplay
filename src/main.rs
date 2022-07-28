@@ -79,4 +79,7 @@ async fn main() {
     let err = mpv_receiver.await.unwrap();
     println!("{}", err);
     mpv_handle.await.unwrap();
+
+    // stop even when repl is blocking for input
+    std::process::exit(0);
 }
