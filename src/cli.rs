@@ -1,6 +1,6 @@
 use rumqttc::{AsyncClient, QoS};
 use std::{str::FromStr, time::Duration};
-use strum::EnumString;
+use strum::{EnumIter, EnumString, IntoEnumIterator};
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
     time::sleep,
@@ -28,11 +28,41 @@ impl CliMode {
     }
 }
 
+#[derive(EnumIter)]
 enum ReplCmd {
     Set(String),
     Pause,
     Play(f64),
     Chat(String),
+}
+
+impl ReplCmd {
+    const fn variant_string(&self) -> &'static str {
+        match self {
+            Self::Play(_) => "play <from>",
+            Self::Pause => "pause",
+            Self::Set(_) => "set <link>",
+            Self::Chat(_) => "chat <msg>",
+        }
+    }
+
+    fn help_string() -> String {
+        let mut out = String::new();
+        out.push('[');
+
+        let mut it = Self::iter().map(|v| Self::variant_string(&v));
+        if let Some(var) = it.next() {
+            out.push_str(var);
+        }
+
+        for var in it {
+            out.push_str(", ");
+            out.push_str(var);
+        }
+
+        out.push(']');
+        out
+    }
 }
 
 #[derive(Debug)]
@@ -69,7 +99,7 @@ impl FromStr for ReplCmd {
 }
 
 async fn repl(client: AsyncClient, user: &str, topic: &str) {
-    println!("commands: [set <link>, play <seconds>, pause]");
+    println!("commands: {}", ReplCmd::help_string());
 
     let stdin = tokio::io::stdin();
     let stdin = BufReader::new(stdin);
