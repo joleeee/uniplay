@@ -33,7 +33,12 @@ pub enum VideoMessage {
 #[async_trait]
 pub trait VideoPlayer {
     type Error;
+
+    /// spawn the video player (non-blocking apart from a possible short sleep)
     fn start(&self) -> std::process::Child;
+
+    /// starts the proccess that tells the video player to do the corresponding thing to each
+    /// VideoMessage
     async fn run(self, receiver: mpsc::Receiver<VideoMessage>, os_sender: oneshot::Sender<Self::Error>);
 }
 
