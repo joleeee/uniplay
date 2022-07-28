@@ -70,7 +70,7 @@ async fn main() {
     }
 
     let (mpv_sender, mpv_receiver) = oneshot::channel();
-    let mpv_handle = tokio::spawn(mpv_player.run(vd_receiver, mpv_sender));
+    tokio::spawn(mpv_player.run(vd_receiver, mpv_sender));
 
     let cli_handle = tokio::spawn(async move {
         args.cli.run(client, &args.name, &topic).await;
@@ -80,9 +80,6 @@ async fn main() {
         res = mpv_receiver => {
             let res = res.expect("recv error");
             println!("{}", res);
-        }
-        res = mpv_handle => {
-            println!("mpv quit: {:?}", res);
         }
         res = cli_handle => {
             println!("cli quit: {:?}", res);
