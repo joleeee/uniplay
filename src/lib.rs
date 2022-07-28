@@ -39,7 +39,11 @@ pub trait VideoPlayer {
 
     /// starts the proccess that tells the video player to do the corresponding thing to each
     /// VideoMessage
-    async fn run(self, receiver: mpsc::Receiver<VideoMessage>, os_sender: oneshot::Sender<Self::Error>);
+    async fn run(
+        self,
+        receiver: mpsc::Receiver<VideoMessage>,
+        os_sender: oneshot::Sender<Self::Error>,
+    );
 }
 
 pub struct UniplayOpts {
