@@ -81,11 +81,11 @@ async fn main() {
             let err = err.expect("recv error");
             println!("{}", err);
         }
-        _ = mpv_handle => {
-            println!("mpv quit!");
+        err = mpv_handle => {
+            println!("mpv quit: {:?}", err);
         }
-        _ = cli_handle => {
-            println!("cli quit!");
+        err = cli_handle => {
+            println!("cli quit: {:?}", err);
         }
     }
 
