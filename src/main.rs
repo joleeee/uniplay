@@ -4,7 +4,7 @@ use rand::Rng;
 mod cli;
 use cli::CliMode;
 
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use uniplay::{MpvPlayer, ProtoMessage, State, VideoPlayer};
 
 #[derive(FromArgs, Debug)]
@@ -67,15 +67,29 @@ async fn main() {
     if args.autostart {
         mpv_player.start();
     }
+
     let (player_sender, player_receiver) = mpsc::channel(8);
     let (event_sender, event_receiver) = mpsc::channel(8);
-    let mpv_handle = tokio::spawn(mpv_player.run(player_receiver, Some(event_sender)));
+    let (mpv_sender, mpv_receiver) = oneshot::channel();
+    tokio::spawn(mpv_player.run(player_receiver, mpv_sender, Some(event_sender)));
 
     let (event_loop, proto_sender) = uni.spawn().await;
     State::spawn(event_loop, player_sender, event_receiver).await;
-    tokio::spawn(async move {
+
+    let cli_handle = tokio::spawn(async move {
         args.cli.run(proto_sender, &args.name).await;
     });
 
-    mpv_handle.await.unwrap();
+    tokio::select! {
+        res = mpv_receiver => {
+            let res = res.expect("recv error");
+            println!("{}", res);
+        }
+        res = cli_handle => {
+            println!("cli quit: {:?}", res);
+        }
+    }
+
+    // stop even when repl is blocking for input
+    std::process::exit(0);
 }

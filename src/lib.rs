@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use rumqttc::{AsyncClient, EventLoop, MqttOptions, QoS};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 mod mpv;
 pub use mpv::MpvPlayer;
@@ -32,10 +32,15 @@ pub enum VideoMessage {
 
 #[async_trait]
 pub trait VideoPlayer {
+    type Error;
+
+    /// spawn the video player (non-blocking apart from a possible short sleep)
     fn start(&self) -> std::process::Child;
+
     async fn run(
         self,
         receiver: mpsc::Receiver<VideoMessage>,
+        os_sender: oneshot::Sender<Self::Error>,
         event_sender: Option<mpsc::Sender<mpvi::Event>>,
     );
 }
