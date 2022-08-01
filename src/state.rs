@@ -8,17 +8,17 @@ pub struct State;
 
 impl State {
     pub async fn spawn(eventloop: EventLoop) -> mpsc::Receiver<VideoMessage> {
-        let (pt_sender, pt_receiver) = mpsc::channel::<ProtoMessage>(8);
-        let (vd_sender, vd_receiver) = mpsc::channel::<VideoMessage>(8);
+        let (proto_sender, proto_receiver) = mpsc::channel::<ProtoMessage>(8);
+        let (player_sender, player_receiver) = mpsc::channel::<VideoMessage>(8);
 
-        tokio::spawn(mqtt_listen(eventloop, pt_sender));
-        tokio::spawn(relay(pt_receiver, vd_sender));
+        tokio::spawn(decode_incoming(eventloop, proto_sender));
+        tokio::spawn(state_machine(proto_receiver, player_sender));
 
-        vd_receiver
+        player_receiver
     }
 }
 
-async fn mqtt_listen(mut eventloop: EventLoop, sender: mpsc::Sender<ProtoMessage>) {
+async fn decode_incoming(mut eventloop: EventLoop, sender: mpsc::Sender<ProtoMessage>) {
     use rumqttc::{Event, Packet};
 
     fn decode_event(event: Event) -> Option<ProtoMessage> {
@@ -49,7 +49,10 @@ async fn mqtt_listen(mut eventloop: EventLoop, sender: mpsc::Sender<ProtoMessage
     }
 }
 
-async fn relay(mut receiver: mpsc::Receiver<ProtoMessage>, sender: mpsc::Sender<VideoMessage>) {
+async fn state_machine(
+    mut receiver: mpsc::Receiver<ProtoMessage>,
+    sender: mpsc::Sender<VideoMessage>,
+) {
     loop {
         let msg = receiver.recv().await.expect("closed");
         match msg {
