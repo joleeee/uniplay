@@ -71,10 +71,10 @@ async fn main() {
     let (event_sender, event_receiver) = mpsc::channel(8);
     let mpv_handle = tokio::spawn(mpv_player.run(player_receiver, Some(event_sender)));
 
-    let (client, event_loop) = uni.spawn().await;
+    let (event_loop, proto_sender) = uni.spawn().await;
     State::spawn(event_loop, player_sender, event_receiver).await;
     tokio::spawn(async move {
-        args.cli.run(client, &args.name, &topic).await;
+        args.cli.run(proto_sender, &args.name).await;
     });
 
     mpv_handle.await.unwrap();

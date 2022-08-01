@@ -1,8 +1,8 @@
-use rumqttc::{AsyncClient, QoS};
 use std::{str::FromStr, time::Duration};
 use strum::EnumString;
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
+    sync::mpsc,
     time::sleep,
 };
 
@@ -16,13 +16,13 @@ pub enum CliMode {
 }
 
 impl CliMode {
-    pub async fn run(&self, client: AsyncClient, user: &str, topic: &str) {
+    pub async fn run(&self, sender: mpsc::Sender<ProtoMessage>, user: &str) {
         match self {
             Self::Repl => {
-                repl(client, user, topic).await;
+                repl(sender, user).await;
             }
             Self::Spoof => {
-                spoof(client, topic).await;
+                spoof(sender).await;
             }
         }
     }
@@ -68,7 +68,7 @@ impl FromStr for ReplCmd {
     }
 }
 
-async fn repl(client: AsyncClient, user: &str, topic: &str) {
+async fn repl(sender: mpsc::Sender<ProtoMessage>, user: &str) {
     println!("commands: [set <link>, play <seconds>, pause]");
 
     let stdin = tokio::io::stdin();
@@ -93,15 +93,11 @@ async fn repl(client: AsyncClient, user: &str, topic: &str) {
             ReplCmd::Chat(m) => ProtoMessage::Chat(user.to_owned(), m),
         };
 
-        let msg = serde_json::to_string(&msg).unwrap();
-        client
-            .publish(topic, QoS::ExactlyOnce, false, msg)
-            .await
-            .unwrap();
+        sender.send(msg).await.expect("closed");
     }
 }
 
-async fn spoof(client: AsyncClient, topic: &str) {
+async fn spoof(sender: mpsc::Sender<ProtoMessage>) {
     let messages = vec![
         ProtoMessage::Media("https://youtu.be/jNQXAC9IVRw".to_string()),
         ProtoMessage::PlayFrom(2.0),
@@ -111,12 +107,7 @@ async fn spoof(client: AsyncClient, topic: &str) {
 
     sleep(Duration::from_millis(500)).await;
     for msg in messages {
-        let msg = serde_json::to_string(&msg).unwrap();
-
-        client
-            .publish(topic, QoS::ExactlyOnce, false, msg)
-            .await
-            .unwrap();
+        sender.send(msg).await.expect("broken");
 
         sleep(Duration::from_millis(10_000)).await;
     }

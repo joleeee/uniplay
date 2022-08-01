@@ -49,7 +49,7 @@ pub struct UniplayOpts {
 }
 
 impl UniplayOpts {
-    pub async fn spawn(&self) -> (AsyncClient, EventLoop) {
+    pub async fn spawn(&self) -> (EventLoop, mpsc::Sender<ProtoMessage>) {
         let mut mqttoptions = MqttOptions::new(&self.name, &self.server, self.port);
         mqttoptions.set_keep_alive(Duration::from_secs(5));
         let (client, eventloop) = AsyncClient::new(mqttoptions, 10);
@@ -58,12 +58,25 @@ impl UniplayOpts {
             .await
             .unwrap();
 
-        let msg = serde_json::to_string(&ProtoMessage::Join(self.name.clone())).unwrap();
-        client
-            .publish(&self.topic, QoS::ExactlyOnce, false, msg.as_bytes())
-            .await
-            .unwrap();
+        let (proto_sender, mut proto_receiver) = mpsc::channel::<ProtoMessage>(8);
 
-        (client, eventloop)
+        let topic = self.topic.clone();
+        tokio::spawn(async move {
+            loop {
+                let msg = proto_receiver.recv().await.expect("closed");
+                let txt = serde_json::to_string(&msg).unwrap();
+                client
+                    .publish(&topic, QoS::ExactlyOnce, false, txt.as_bytes())
+                    .await
+                    .expect("failed to send");
+            }
+        });
+
+        proto_sender
+            .send(ProtoMessage::Join(self.name.clone()))
+            .await
+            .expect("closed");
+
+        (eventloop, proto_sender)
     }
 }
