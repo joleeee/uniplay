@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use rumqttc::{AsyncClient, MqttOptions, QoS};
+use rumqttc::{AsyncClient, EventLoop, MqttOptions, QoS};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -8,7 +8,7 @@ mod mpv;
 pub use mpv::MpvPlayer;
 
 mod state;
-use state::State;
+pub use state::State;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 /// Network messages
@@ -33,7 +33,11 @@ pub enum VideoMessage {
 #[async_trait]
 pub trait VideoPlayer {
     fn start(&self) -> std::process::Child;
-    async fn run(self, receiver: mpsc::Receiver<VideoMessage>, event_sender: Option<mpsc::Sender<mpvi::Event>>);
+    async fn run(
+        self,
+        receiver: mpsc::Receiver<VideoMessage>,
+        event_sender: Option<mpsc::Sender<mpvi::Event>>,
+    );
 }
 
 pub struct UniplayOpts {
@@ -45,7 +49,7 @@ pub struct UniplayOpts {
 }
 
 impl UniplayOpts {
-    pub async fn spawn(&self) -> (AsyncClient, mpsc::Receiver<VideoMessage>) {
+    pub async fn spawn(&self) -> (AsyncClient, EventLoop) {
         let mut mqttoptions = MqttOptions::new(&self.name, &self.server, self.port);
         mqttoptions.set_keep_alive(Duration::from_secs(5));
         let (client, eventloop) = AsyncClient::new(mqttoptions, 10);
@@ -60,8 +64,6 @@ impl UniplayOpts {
             .await
             .unwrap();
 
-        let vd_receiver = State::spawn(eventloop).await;
-
-        (client, vd_receiver)
+        (client, eventloop)
     }
 }

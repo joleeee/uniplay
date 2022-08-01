@@ -7,14 +7,15 @@ use crate::{ProtoMessage, VideoMessage};
 pub struct State;
 
 impl State {
-    pub async fn spawn(eventloop: EventLoop) -> mpsc::Receiver<VideoMessage> {
+    pub async fn spawn(
+        eventloop: EventLoop,
+        player_sender: mpsc::Sender<VideoMessage>,
+        event_receiver: mpsc::Receiver<mpvi::Event>,
+    ) {
         let (proto_sender, proto_receiver) = mpsc::channel::<ProtoMessage>(8);
-        let (player_sender, player_receiver) = mpsc::channel::<VideoMessage>(8);
 
         tokio::spawn(decode_incoming(eventloop, proto_sender));
-        tokio::spawn(state_machine(proto_receiver, player_sender));
-
-        player_receiver
+        tokio::spawn(state_machine(proto_receiver, event_receiver, player_sender));
     }
 }
 
@@ -50,15 +51,29 @@ async fn decode_incoming(mut eventloop: EventLoop, sender: mpsc::Sender<ProtoMes
 }
 
 async fn state_machine(
-    mut receiver: mpsc::Receiver<ProtoMessage>,
+    mut proto_receiver: mpsc::Receiver<ProtoMessage>,
+    mut event_receiver: mpsc::Receiver<mpvi::Event>,
     sender: mpsc::Sender<VideoMessage>,
 ) {
     loop {
         tokio::select! {
-            msg = receiver.recv() => {
+            msg = proto_receiver.recv() => {
                 execute_protomsg(msg.expect("closed"), &sender).await;
             },
+            event = event_receiver.recv() => {
+                let event = event.expect("closed");
+                handle_event(event).await;
+            }
         }
+    }
+}
+
+async fn handle_event(event: mpvi::Event) {
+    use mpvi::Event;
+    match event {
+        Event::Pause => println!("user paused!"),
+        Event::Unpause => println!("user unpaused!"),
+        _ => {}
     }
 }
 

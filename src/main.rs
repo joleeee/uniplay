@@ -4,7 +4,8 @@ use rand::Rng;
 mod cli;
 use cli::CliMode;
 
-use uniplay::{MpvPlayer, ProtoMessage, VideoPlayer};
+use tokio::sync::mpsc;
+use uniplay::{MpvPlayer, ProtoMessage, State, VideoPlayer};
 
 #[derive(FromArgs, Debug)]
 /// Tool for syncing video playback
@@ -59,7 +60,6 @@ async fn main() {
         port: args.port,
         topic: topic.clone(),
     };
-    let (client, vd_receiver) = uni.spawn().await;
 
     let mpv_player = MpvPlayer {
         ipc_path: args.ipc_path,
@@ -67,8 +67,12 @@ async fn main() {
     if args.autostart {
         mpv_player.start();
     }
-    let mpv_handle = tokio::spawn(mpv_player.run(vd_receiver, None));
+    let (player_sender, player_receiver) = mpsc::channel(8);
+    let (event_sender, event_receiver) = mpsc::channel(8);
+    let mpv_handle = tokio::spawn(mpv_player.run(player_receiver, Some(event_sender)));
 
+    let (client, event_loop) = uni.spawn().await;
+    State::spawn(event_loop, player_sender, event_receiver).await;
     tokio::spawn(async move {
         args.cli.run(client, &args.name, &topic).await;
     });
