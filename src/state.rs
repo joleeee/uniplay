@@ -54,24 +54,31 @@ async fn state_machine(
     sender: mpsc::Sender<VideoMessage>,
 ) {
     loop {
-        let msg = receiver.recv().await.expect("closed");
-        match msg {
-            ProtoMessage::Join(name) => {
-                println!("{} joined the room.", name);
-            }
-            ProtoMessage::Chat(from, msg) => {
-                println!("<{}> {}", from, msg);
-            }
-            ProtoMessage::PlayFrom(pos) => {
-                sender.send(VideoMessage::Seek(pos)).await.unwrap();
-                sender.send(VideoMessage::Unpause).await.unwrap();
-            }
-            ProtoMessage::Stop => {
-                sender.send(VideoMessage::Pause).await.unwrap();
-            }
-            ProtoMessage::Media(link) => {
-                sender.send(VideoMessage::Media(link)).await.unwrap();
-            }
+        tokio::select! {
+            msg = receiver.recv() => {
+                execute_protomsg(msg.expect("closed"), &sender).await;
+            },
+        }
+    }
+}
+
+async fn execute_protomsg(msg: ProtoMessage, sender: &mpsc::Sender<VideoMessage>) {
+    match msg {
+        ProtoMessage::Join(name) => {
+            println!("{} joined the room.", name);
+        }
+        ProtoMessage::Chat(from, msg) => {
+            println!("<{}> {}", from, msg);
+        }
+        ProtoMessage::PlayFrom(pos) => {
+            sender.send(VideoMessage::Seek(pos)).await.unwrap();
+            sender.send(VideoMessage::Unpause).await.unwrap();
+        }
+        ProtoMessage::Stop => {
+            sender.send(VideoMessage::Pause).await.unwrap();
+        }
+        ProtoMessage::Media(link) => {
+            sender.send(VideoMessage::Media(link)).await.unwrap();
         }
     }
 }
