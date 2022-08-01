@@ -67,7 +67,7 @@ async fn main() {
     if args.autostart {
         mpv_player.start();
     }
-    let mpv_handle = tokio::spawn(mpv_player.run(vd_receiver));
+    let mpv_handle = tokio::spawn(mpv_player.run(vd_receiver, None));
 
     tokio::spawn(async move {
         args.cli.run(client, &args.name, &topic).await;

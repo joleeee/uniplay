@@ -33,7 +33,7 @@ pub enum VideoMessage {
 #[async_trait]
 pub trait VideoPlayer {
     fn start(&self) -> std::process::Child;
-    async fn run(self, receiver: mpsc::Receiver<VideoMessage>);
+    async fn run(self, receiver: mpsc::Receiver<VideoMessage>, event_sender: Option<mpsc::Sender<mpvi::Event>>);
 }
 
 pub struct UniplayOpts {
